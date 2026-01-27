@@ -19,10 +19,10 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Load .env file if it exists (for admin credentials)
-if [ -f "$(dirname "$0")/../.env" ]; then
-    source "$(dirname "$0")/../.env"
-elif [ -f "$(dirname "$0")/.env" ]; then
+if [ -f "$(dirname "$0")/.env" ]; then
     source "$(dirname "$0")/.env"
+elif [ -f "$(dirname "$0")/../.env" ]; then
+    source "$(dirname "$0")/../.env"
 elif [ -f ".env" ]; then
     source ".env"
 fi
