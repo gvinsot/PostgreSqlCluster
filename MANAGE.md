@@ -10,7 +10,7 @@ This document covers the **deployment, architecture, and management** of the Pos
 ┌─────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   server-b  │    │    server-c     │    │    server-d     │
 │   PRIMARY   │───►│    STANDBY 1    │    │    STANDBY 2    │
-│ postgres:17 │───►│   postgres:17   │    │   postgres:17   │
+│ postgres:18 │───►│   postgres:18   │    │   postgres:18   │
 └─────────────┘    └─────────────────┘    └─────────────────┘
        │                                          ▲
        └──────────────────────────────────────────┘
@@ -29,7 +29,7 @@ This document covers the **deployment, architecture, and management** of the Pos
 ## Prerequisites
 
 - Docker Swarm initialized with nodes: `server-a`, `server-b`, `server-c`, `server-d`
-- `postgres:17` image pulled on `server-b`, `server-c`, `server-d`
+- `postgres:18` image pulled on `server-b`, `server-c`, `server-d`
 - Overlay network connectivity between all nodes
 
 
@@ -97,14 +97,14 @@ docker stack services pgcluster
 
 # Expected output:
 # NAME                     REPLICAS   IMAGE
-# pgcluster_pg-primary     1/1        postgres:17
-# pgcluster_pg-standby1    1/1        postgres:17
-# pgcluster_pg-standby2    1/1        postgres:17
-# pgcluster_pg-init        1/1        postgres:17
+# pgcluster_pg-primary     1/1        postgres:18
+# pgcluster_pg-standby1    1/1        postgres:18
+# pgcluster_pg-standby2    1/1        postgres:18
+# pgcluster_pg-init        1/1        postgres:18
 # pgcluster_pgadmin        1/1        dpage/pgadmin4:latest
 
 # Check replication status
-docker run --rm --network pgcluster_internal postgres:17 \
+docker run --rm --network pgcluster_internal postgres:18 \
   psql -h pg-primary -U postgres -d postgres -c \
   "SELECT client_addr, state, sent_lsn, replay_lsn FROM pg_stat_replication;"
 ```
@@ -170,7 +170,7 @@ The script outputs the connection string for the created user.
 Alternatively, connect to PostgreSQL directly:
 
 ```bash
-docker run --rm -it --network pgcluster_internal postgres:17 \
+docker run --rm -it --network pgcluster_internal postgres:18 \
   psql -h pg-primary -U postgres -d postgres
 ```
 
@@ -225,11 +225,11 @@ Data is stored in Docker volumes on each node:
 
 ```bash
 # Backup from primary (all databases)
-docker run --rm --network pgcluster_internal postgres:17 \
+docker run --rm --network pgcluster_internal postgres:18 \
   pg_dumpall -h pg-primary -U postgres | gzip > backup-$(date +%Y%m%d).sql.gz
 
 # Backup a specific database
-docker run --rm --network pgcluster_internal postgres:17 \
+docker run --rm --network pgcluster_internal postgres:18 \
   pg_dump -h pg-primary -U postgres -Fc myapp > myapp-$(date +%Y%m%d).dump
 ```
 
@@ -238,11 +238,11 @@ docker run --rm --network pgcluster_internal postgres:17 \
 ```bash
 # Restore all databases
 gunzip -c backup-20240120.sql.gz | \
-  docker run --rm -i --network pgcluster_internal postgres:17 \
+  docker run --rm -i --network pgcluster_internal postgres:18 \
   psql -h pg-primary -U postgres
 
 # Restore a specific database
-docker run --rm -i --network pgcluster_internal postgres:17 \
+docker run --rm -i --network pgcluster_internal postgres:18 \
   pg_restore -h pg-primary -U postgres -d myapp < myapp-20240120.dump
 ```
 
@@ -264,7 +264,7 @@ docker service ps pgcluster_pg-primary --no-trunc
 
 ```bash
 # SSH to the node and pull
-docker pull postgres:17
+docker pull postgres:18
 ```
 
 ### Standby Not Replicating
@@ -274,12 +274,12 @@ docker pull postgres:17
 docker service logs pgcluster_pg-standby1
 
 # Check replication status from primary
-docker run --rm --network pgcluster_internal postgres:17 \
+docker run --rm --network pgcluster_internal postgres:18 \
   psql -h pg-primary -U postgres -d postgres -c \
   "SELECT client_addr, state, sent_lsn, write_lsn, flush_lsn, replay_lsn FROM pg_stat_replication;"
 
 # Check standby status
-docker run --rm --network pgcluster_internal postgres:17 \
+docker run --rm --network pgcluster_internal postgres:18 \
   psql -h pg-standby1 -U postgres -d postgres -c \
   "SELECT pg_is_in_recovery(), pg_last_wal_receive_lsn(), pg_last_wal_replay_lsn();"
 ```
@@ -288,11 +288,11 @@ docker run --rm --network pgcluster_internal postgres:17 \
 
 ```bash
 # Test connection without password (should fail if auth is properly configured)
-docker run --rm --network pgcluster_internal postgres:17 \
+docker run --rm --network pgcluster_internal postgres:18 \
   psql -h pg-primary -U postgres -d postgres -c "SELECT 1;"
 
 # Test with password
-docker run --rm --network pgcluster_internal -e PGPASSWORD=yourpassword postgres:17 \
+docker run --rm --network pgcluster_internal -e PGPASSWORD=yourpassword postgres:18 \
   psql -h pg-primary -U postgres -d postgres -c "SELECT 1;"
 ```
 
@@ -300,7 +300,7 @@ docker run --rm --network pgcluster_internal -e PGPASSWORD=yourpassword postgres
 
 ```bash
 # Test connectivity from a container
-docker run --rm --network pgcluster_internal postgres:17 \
+docker run --rm --network pgcluster_internal postgres:18 \
   pg_isready -h pg-primary -p 5432
 
 # Check overlay network
@@ -311,14 +311,14 @@ docker network inspect pgcluster_internal
 
 ```bash
 # Replication status
-docker run --rm --network pgcluster_internal -e PGPASSWORD=yourpassword postgres:17 \
+docker run --rm --network pgcluster_internal -e PGPASSWORD=yourpassword postgres:18 \
   psql -h pg-primary -U postgres -d postgres -c \
   "SELECT client_addr, state, sent_lsn, replay_lsn,
    pg_wal_lsn_diff(sent_lsn, replay_lsn) AS replication_lag_bytes
    FROM pg_stat_replication;"
 
 # Check if a node is primary or standby
-docker run --rm --network pgcluster_internal -e PGPASSWORD=yourpassword postgres:17 \
+docker run --rm --network pgcluster_internal -e PGPASSWORD=yourpassword postgres:18 \
   psql -h pg-primary -U postgres -d postgres -c "SELECT pg_is_in_recovery();"
 # Returns 'f' for primary, 't' for standby
 ```

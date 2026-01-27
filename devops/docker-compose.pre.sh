@@ -100,7 +100,7 @@ is_service_running() {
 # Function to execute psql command on the primary via temporary container
 exec_psql() {
     local sql_cmd="$1"
-    PGPASSWORD="$PG_ADMIN_PASSWORD" docker run --rm --network pgcluster_internal postgres:17 \
+    PGPASSWORD="$PG_ADMIN_PASSWORD" docker run --rm --network pgcluster_internal postgres:18 \
         psql -h pg-primary -U "$PG_ADMIN_USER" -d postgres -t -A -c "$sql_cmd" 2>/dev/null
 }
 
@@ -129,7 +129,7 @@ if is_service_running; then
 
             echo ""
             echo "Replication status:"
-            PGPASSWORD="$PG_ADMIN_PASSWORD" docker run --rm --network pgcluster_internal postgres:17 \
+            PGPASSWORD="$PG_ADMIN_PASSWORD" docker run --rm --network pgcluster_internal postgres:18 \
                 psql -h pg-primary -U "$PG_ADMIN_USER" -d postgres -c \
                 "SELECT client_addr, state, sent_lsn, write_lsn, flush_lsn, replay_lsn FROM pg_stat_replication;" 2>/dev/null
         else

@@ -92,12 +92,12 @@ echo -e "${BLUE}Creating user '${USERNAME}' on database '${DATABASE}' with role 
 
 # Helper function to run psql via temporary container
 run_psql() {
-    PGPASSWORD="$PG_ADMIN_PASSWORD" docker run --rm --network pgcluster_internal postgres:17 \
+    PGPASSWORD="$PG_ADMIN_PASSWORD" docker run --rm --network pgcluster_internal postgres:18 \
         psql -h pg-primary -U "$PG_ADMIN_USER" -d "$1" -t -A -c "$2" 2>&1
 }
 
 run_psql_verbose() {
-    PGPASSWORD="$PG_ADMIN_PASSWORD" docker run --rm --network pgcluster_internal postgres:17 \
+    PGPASSWORD="$PG_ADMIN_PASSWORD" docker run --rm --network pgcluster_internal postgres:18 \
         psql -h pg-primary -U "$PG_ADMIN_USER" -d "$1" -c "$2" 2>&1
 }
 

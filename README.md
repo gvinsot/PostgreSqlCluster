@@ -138,12 +138,12 @@ postgresql://user:pass@pg-standby1:5432,pg-standby2:5432/mydb?target_session_att
 Test from any container on the network:
 
 ```bash
-docker run --rm --network pgcluster_internal postgres:17 \
+docker run --rm --network pgcluster_internal postgres:18 \
   pg_isready -h pg-primary -p 5432 -U postgres
 ```
 
 ```bash
-docker run --rm --network pgcluster_internal postgres:17 \
+docker run --rm --network pgcluster_internal postgres:18 \
   psql -h pg-primary -U postgres -d postgres -c "SELECT version();"
 ```
 

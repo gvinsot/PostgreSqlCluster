@@ -4,7 +4,7 @@ version: "3.9"
 services:
   # PostgreSQL Primary (server-b)
   pg-primary:
-    image: postgres:17
+    image: postgres:18
     hostname: pg-primary
     # Phase 1: Sans auth stricte pour init. Phase 2: pg_hba.conf sera mis a jour
     command:
@@ -52,12 +52,17 @@ services:
 
   # PostgreSQL Standby 1 (server-c)
   pg-standby1:
-    image: postgres:17
+    image: postgres:18
     hostname: pg-standby1
     entrypoint: ["bash", "-c"]
     command:
       - |
         export PGDATA=/var/lib/postgresql/data
+
+        # Ensure data directory exists with correct ownership
+        mkdir -p "$$PGDATA"
+        chown postgres:postgres "$$PGDATA"
+        chmod 0700 "$$PGDATA"
 
         if [ ! -s "$$PGDATA/PG_VERSION" ]; then
             echo "Data directory empty, performing base backup from primary..."
@@ -71,18 +76,20 @@ services:
                 sleep 5
             done
 
-            PGPASSWORD="$${REPLICATION_PASSWORD}" pg_basebackup \
+            export PGPASSWORD="$${REPLICATION_PASSWORD}"
+            gosu postgres pg_basebackup \
                 -h pg-primary -p 5432 -U "$${REPLICATION_USER}" \
                 -D "$$PGDATA" -Fp -Xs -P -R
+            unset PGPASSWORD
 
-            chmod 0700 "$$PGDATA"
             echo "Base backup complete"
         fi
 
         # Ensure standby mode
         touch "$$PGDATA/standby.signal"
+        chown postgres:postgres "$$PGDATA/standby.signal"
 
-        exec postgres \
+        exec gosu postgres postgres \
             -c hot_standby=on
     environment:
       REPLICATION_USER: ${PG_REPLICATION_USER:-replicator}
@@ -108,12 +115,17 @@ services:
 
   # PostgreSQL Standby 2 (server-d)
   pg-standby2:
-    image: postgres:17
+    image: postgres:18
     hostname: pg-standby2
     entrypoint: ["bash", "-c"]
     command:
       - |
         export PGDATA=/var/lib/postgresql/data
+
+        # Ensure data directory exists with correct ownership
+        mkdir -p "$$PGDATA"
+        chown postgres:postgres "$$PGDATA"
+        chmod 0700 "$$PGDATA"
 
         if [ ! -s "$$PGDATA/PG_VERSION" ]; then
             echo "Data directory empty, performing base backup from primary..."
@@ -127,18 +139,20 @@ services:
                 sleep 5
             done
 
-            PGPASSWORD="$${REPLICATION_PASSWORD}" pg_basebackup \
+            export PGPASSWORD="$${REPLICATION_PASSWORD}"
+            gosu postgres pg_basebackup \
                 -h pg-primary -p 5432 -U "$${REPLICATION_USER}" \
                 -D "$$PGDATA" -Fp -Xs -P -R
+            unset PGPASSWORD
 
-            chmod 0700 "$$PGDATA"
             echo "Base backup complete"
         fi
 
         # Ensure standby mode
         touch "$$PGDATA/standby.signal"
+        chown postgres:postgres "$$PGDATA/standby.signal"
 
-        exec postgres \
+        exec gosu postgres postgres \
             -c hot_standby=on
     environment:
       REPLICATION_USER: ${PG_REPLICATION_USER:-replicator}
@@ -164,7 +178,7 @@ services:
 
   # PostgreSQL Cluster Initializer (runs once, checks replication status)
   pg-init:
-    image: postgres:17
+    image: postgres:18
     entrypoint: ["bash", "-c"]
     command:
       - |
