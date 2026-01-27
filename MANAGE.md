@@ -216,9 +216,9 @@ Data is stored in Docker volumes on each node:
 
 | Volume | Node | Container Path |
 |--------|------|----------------|
-| `pgcluster_pg_primary_data` | server-b | /var/lib/postgresql/data |
-| `pgcluster_pg_standby1_data` | server-c | /var/lib/postgresql/data |
-| `pgcluster_pg_standby2_data` | server-d | /var/lib/postgresql/data |
+| `pgcluster_pg_primary_data` | server-b | /var/lib/postgresql |
+| `pgcluster_pg_standby1_data` | server-c | /var/lib/postgresql |
+| `pgcluster_pg_standby2_data` | server-d | /var/lib/postgresql |
 | `pgcluster_pgadmin_data` | any manager | /var/lib/pgadmin |
 
 ### Backup

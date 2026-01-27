@@ -32,7 +32,7 @@ services:
         target: /docker-entrypoint-initdb.d/01-init-replication.sh
         mode: 0755
     volumes:
-      - pg_primary_data:/var/lib/postgresql/data
+      - pg_primary_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
@@ -57,10 +57,12 @@ services:
     entrypoint: ["bash", "-c"]
     command:
       - |
-        export PGDATA=/var/lib/postgresql/data
-
+        # PGDATA is set by the postgres:18 image (e.g. /var/lib/postgresql/18/main)
         # Ensure data directory exists with correct ownership
         mkdir -p "$$PGDATA"
+        chown postgres:postgres /var/lib/postgresql
+        PARENT=$$(dirname "$$PGDATA")
+        [ -d "$$PARENT" ] && chown postgres:postgres "$$PARENT"
         chown postgres:postgres "$$PGDATA"
         chmod 0700 "$$PGDATA"
 
@@ -95,7 +97,7 @@ services:
       REPLICATION_USER: ${PG_REPLICATION_USER:-replicator}
       REPLICATION_PASSWORD: ${PG_REPLICATION_PASSWORD:-replicator123}
     volumes:
-      - pg_standby1_data:/var/lib/postgresql/data
+      - pg_standby1_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${PG_ADMIN_USER:-postgres}"]
       interval: 10s
@@ -120,10 +122,12 @@ services:
     entrypoint: ["bash", "-c"]
     command:
       - |
-        export PGDATA=/var/lib/postgresql/data
-
+        # PGDATA is set by the postgres:18 image (e.g. /var/lib/postgresql/18/main)
         # Ensure data directory exists with correct ownership
         mkdir -p "$$PGDATA"
+        chown postgres:postgres /var/lib/postgresql
+        PARENT=$$(dirname "$$PGDATA")
+        [ -d "$$PARENT" ] && chown postgres:postgres "$$PARENT"
         chown postgres:postgres "$$PGDATA"
         chmod 0700 "$$PGDATA"
 
@@ -158,7 +162,7 @@ services:
       REPLICATION_USER: ${PG_REPLICATION_USER:-replicator}
       REPLICATION_PASSWORD: ${PG_REPLICATION_PASSWORD:-replicator123}
     volumes:
-      - pg_standby2_data:/var/lib/postgresql/data
+      - pg_standby2_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${PG_ADMIN_USER:-postgres}"]
       interval: 10s
