@@ -1,0 +1,272 @@
+
+version: "3.9"
+
+services:
+  # PostgreSQL Primary (server-b)
+  pg-primary:
+    image: postgres:17
+    hostname: pg-primary
+    # Phase 1: Sans auth stricte pour init. Phase 2: pg_hba.conf sera mis a jour
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=10
+      - -c
+      - max_replication_slots=10
+      - -c
+      - hot_standby=on
+      - -c
+      - wal_keep_size=1GB
+      - -c
+      - listen_addresses=*
+    environment:
+      POSTGRES_USER: ${PG_ADMIN_USER:-postgres}
+      POSTGRES_PASSWORD: ${PG_ADMIN_PASSWORD:-postgres123}
+      POSTGRES_DB: ${PG_DEFAULT_DB:-postgres}
+      REPLICATION_USER: ${PG_REPLICATION_USER:-replicator}
+      REPLICATION_PASSWORD: ${PG_REPLICATION_PASSWORD:-replicator123}
+    configs:
+      - source: pg_init_replication
+        target: /docker-entrypoint-initdb.d/01-init-replication.sh
+        mode: 0755
+    volumes:
+      - pg_primary_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - internal
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.hostname == server-b
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+
+  # PostgreSQL Standby 1 (server-c)
+  pg-standby1:
+    image: postgres:17
+    hostname: pg-standby1
+    entrypoint: ["bash", "-c"]
+    command:
+      - |
+        export PGDATA=/var/lib/postgresql/data
+
+        if [ ! -s "$$PGDATA/PG_VERSION" ]; then
+            echo "Data directory empty, performing base backup from primary..."
+
+            for i in $$(seq 1 36); do
+                if pg_isready -h pg-primary -p 5432 2>/dev/null; then
+                    echo "Primary is ready!"
+                    break
+                fi
+                echo "Attempt $$i/36: primary not ready, waiting 5s..."
+                sleep 5
+            done
+
+            PGPASSWORD="$${REPLICATION_PASSWORD}" pg_basebackup \
+                -h pg-primary -p 5432 -U "$${REPLICATION_USER}" \
+                -D "$$PGDATA" -Fp -Xs -P -R
+
+            chmod 0700 "$$PGDATA"
+            echo "Base backup complete"
+        fi
+
+        # Ensure standby mode
+        touch "$$PGDATA/standby.signal"
+
+        exec postgres \
+            -c hot_standby=on
+    environment:
+      REPLICATION_USER: ${PG_REPLICATION_USER:-replicator}
+      REPLICATION_PASSWORD: ${PG_REPLICATION_PASSWORD:-replicator123}
+    volumes:
+      - pg_standby1_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_ADMIN_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    networks:
+      - internal
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.hostname == server-c
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+
+  # PostgreSQL Standby 2 (server-d)
+  pg-standby2:
+    image: postgres:17
+    hostname: pg-standby2
+    entrypoint: ["bash", "-c"]
+    command:
+      - |
+        export PGDATA=/var/lib/postgresql/data
+
+        if [ ! -s "$$PGDATA/PG_VERSION" ]; then
+            echo "Data directory empty, performing base backup from primary..."
+
+            for i in $$(seq 1 36); do
+                if pg_isready -h pg-primary -p 5432 2>/dev/null; then
+                    echo "Primary is ready!"
+                    break
+                fi
+                echo "Attempt $$i/36: primary not ready, waiting 5s..."
+                sleep 5
+            done
+
+            PGPASSWORD="$${REPLICATION_PASSWORD}" pg_basebackup \
+                -h pg-primary -p 5432 -U "$${REPLICATION_USER}" \
+                -D "$$PGDATA" -Fp -Xs -P -R
+
+            chmod 0700 "$$PGDATA"
+            echo "Base backup complete"
+        fi
+
+        # Ensure standby mode
+        touch "$$PGDATA/standby.signal"
+
+        exec postgres \
+            -c hot_standby=on
+    environment:
+      REPLICATION_USER: ${PG_REPLICATION_USER:-replicator}
+      REPLICATION_PASSWORD: ${PG_REPLICATION_PASSWORD:-replicator123}
+    volumes:
+      - pg_standby2_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_ADMIN_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    networks:
+      - internal
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.hostname == server-d
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+
+  # PostgreSQL Cluster Initializer (runs once, checks replication status)
+  pg-init:
+    image: postgres:17
+    entrypoint: ["bash", "-c"]
+    command:
+      - |
+        echo "Waiting for PostgreSQL primary..."
+
+        for i in $$(seq 1 36); do
+            if pg_isready -h pg-primary -p 5432 2>/dev/null; then
+                echo "pg-primary is ready!"
+                break
+            fi
+            echo "Attempt $$i/36: pg-primary not ready, waiting 5s..."
+            sleep 5
+        done
+
+        # Wait for standbys
+        for h in pg-standby1 pg-standby2; do
+            for j in $$(seq 1 36); do
+                if pg_isready -h $$h -p 5432 2>/dev/null; then
+                    echo "$$h is ready!"
+                    break
+                fi
+                echo "Waiting for $$h... ($$j/36)"
+                sleep 5
+            done
+        done
+
+        echo ""
+        echo "Checking replication status..."
+        PGPASSWORD="${PG_ADMIN_PASSWORD}" psql -h pg-primary -U "${PG_ADMIN_USER}" -d postgres -c \
+            "SELECT client_addr, state, sent_lsn, write_lsn, flush_lsn, replay_lsn FROM pg_stat_replication;"
+
+        echo ""
+        echo "PostgreSQL cluster is ready!"
+    environment:
+      PG_ADMIN_USER: ${PG_ADMIN_USER:-postgres}
+      PG_ADMIN_PASSWORD: ${PG_ADMIN_PASSWORD:-postgres123}
+    networks:
+      - internal
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+      placement:
+        constraints:
+          - node.hostname == server-a
+
+  # pgAdmin (PostgreSQL Admin UI)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@admin.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin123}
+      PGADMIN_LISTEN_PORT: "80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - proxy
+      - internal
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.hostname == server-a
+      labels:
+        # Activer Traefik
+        - "traefik.enable=true"
+
+        # Definir le port du service pgadmin
+        - "traefik.http.services.pgadmin.loadbalancer.server.port=80"
+
+        # Middleware: Autoriser uniquement les IPs locales
+        - "traefik.http.middlewares.pgadmin-local-only.ipallowlist.sourcerange=127.0.0.1/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+
+        # Router HTTPS (principal) - pgAdmin
+        - "traefik.http.routers.pgadmin.rule=Host(`pgadmin.methodinfo.fr`)"
+        - "traefik.http.routers.pgadmin.entrypoints=websecure"
+        - "traefik.http.routers.pgadmin.tls.certresolver=letsencrypt"
+        - "traefik.http.routers.pgadmin.middlewares=pgadmin-local-only,global@file"
+
+        # Router HTTP (redirige vers HTTPS)
+        - "traefik.http.routers.pgadmin-http.rule=Host(`pgadmin.methodinfo.fr`)"
+        - "traefik.http.routers.pgadmin-http.entrypoints=web"
+        - "traefik.http.routers.pgadmin-http.middlewares=redirect-to-https@file"
+        - "traefik.http.routers.pgadmin-http.service=noop@internal"
+      restart_policy:
+        condition: on-failure
+
+
+configs:
+  pg_init_replication:
+    external: true
+
+volumes:
+  pg_primary_data:
+  pg_standby1_data:
+  pg_standby2_data:
+  pgadmin_data:
+
+networks:
+  internal:
+    driver: overlay
+    attachable: true
+  proxy:
+    external: true
