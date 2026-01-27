@@ -35,7 +35,7 @@ PG_ADMIN_PASSWORD="${PG_ADMIN_PASSWORD:-postgres123}"
 DATABASE="$1"
 USERNAME="$2"
 PASSWORD="$3"
-ROLE="${4:-readwrite}"
+ROLE="${4:-owner}"
 
 # Validate arguments
 if [ -z "$DATABASE" ] || [ -z "$USERNAME" ] || [ -z "$PASSWORD" ]; then
@@ -73,17 +73,17 @@ case "$ROLE" in
 esac
 
 # Check if pg-primary service is running
-if ! docker service ls --filter "name=pgcluster_pg-primary" --format "{{.Replicas}}" 2>/dev/null | grep -q "1/1"; then
+if ! docker service ls --filter "name=postgresqlcluster_pg-primary" --format "{{.Replicas}}" 2>/dev/null | grep -q "1/1"; then
     echo -e "${RED}Error: PostgreSQL primary service is not running${NC}"
     echo "Make sure the PostgreSQL cluster is deployed and running."
     echo ""
-    echo "Check status: docker service ls --filter name=pgcluster"
+    echo "Check status: docker service ls --filter name=postgresqlcluster"
     exit 1
 fi
 
 # Check if the overlay network exists
-if ! docker network ls --filter "name=pgcluster_internal" --format "{{.Name}}" 2>/dev/null | grep -q "pgcluster_internal"; then
-    echo -e "${RED}Error: PostgreSQL network 'pgcluster_internal' not found${NC}"
+if ! docker network ls --filter "name=postgresqlcluster_internal" --format "{{.Name}}" 2>/dev/null | grep -q "postgresqlcluster_internal"; then
+    echo -e "${RED}Error: PostgreSQL network 'postgresqlcluster_internal' not found${NC}"
     echo "Make sure the PostgreSQL cluster is deployed."
     exit 1
 fi
@@ -92,12 +92,12 @@ echo -e "${BLUE}Creating user '${USERNAME}' on database '${DATABASE}' with role 
 
 # Helper function to run psql via temporary container
 run_psql() {
-    PGPASSWORD="$PG_ADMIN_PASSWORD" docker run --rm --network pgcluster_internal postgres:18 \
+    PGPASSWORD="$PG_ADMIN_PASSWORD" docker run --rm --network postgresqlcluster_internal postgres:18 \
         psql -h pg-primary -U "$PG_ADMIN_USER" -d "$1" -t -A -c "$2" 2>&1
 }
 
 run_psql_verbose() {
-    PGPASSWORD="$PG_ADMIN_PASSWORD" docker run --rm --network pgcluster_internal postgres:18 \
+    PGPASSWORD="$PG_ADMIN_PASSWORD" docker run --rm --network postgresqlcluster_internal postgres:18 \
         psql -h pg-primary -U "$PG_ADMIN_USER" -d "$1" -c "$2" 2>&1
 }
 
