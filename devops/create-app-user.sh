@@ -91,13 +91,18 @@ fi
 echo -e "${BLUE}Creating user '${USERNAME}' on database '${DATABASE}' with role '${ROLE}'...${NC}"
 
 # Helper function to run psql via temporary container
+# -e PGPASSWORD is required: env vars are NOT passed from host to container by default
 run_psql() {
-    PGPASSWORD="$PG_ADMIN_PASSWORD" docker run --rm --network postgresqlcluster_internal postgres:18 \
+    docker run --rm --network postgresqlcluster_internal \
+        -e PGPASSWORD="$PG_ADMIN_PASSWORD" \
+        postgres:18 \
         psql -h pg-primary -U "$PG_ADMIN_USER" -d "$1" -t -A -c "$2" 2>&1
 }
 
 run_psql_verbose() {
-    PGPASSWORD="$PG_ADMIN_PASSWORD" docker run --rm --network postgresqlcluster_internal postgres:18 \
+    docker run --rm --network postgresqlcluster_internal \
+        -e PGPASSWORD="$PG_ADMIN_PASSWORD" \
+        postgres:18 \
         psql -h pg-primary -U "$PG_ADMIN_USER" -d "$1" -c "$2" 2>&1
 }
 
