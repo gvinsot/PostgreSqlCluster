@@ -294,6 +294,15 @@ docker run --rm --network pgcluster_internal postgres:18 \
   "SELECT pg_is_in_recovery(), pg_last_wal_receive_lsn(), pg_last_wal_replay_lsn();"
 ```
 
+### Standby logs: "FATAL: database \"pgadmin\" does not exist"
+
+If standby (or primary) logs show connection attempts to database `pgadmin`:
+
+- **Cause:** pgAdmin (the UI) or another client is connecting with **Maintenance database** or default database set to `pgadmin`, which does not exist on the cluster (only `postgres` and your app databases exist).
+- **Fix:** In pgAdmin, right‑click the server **PostgreSQL Cluster** → **Properties** → **Connection** tab → set **Maintenance database** to `postgres` (not `pgadmin`). Save. Then reconnect or refresh the server.
+
+The pre-configured `servers.json` already uses `postgres`; this happens if the server was edited in the UI and saved with database `pgadmin`.
+
 ### pgAdmin Login 500 — "email must be str or bytes"
 
 If pgAdmin returns **500** on login with `TypeError: email must be str or bytes`:
