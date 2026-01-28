@@ -288,8 +288,10 @@ services:
 configs:
   pg_init_replication:
     external: true
+  # Created by docker-compose.pre.sh from .env (Swarm configs are immutable, so pre script replaces it each deploy)
   pgadmin_servers_json:
-    file: ./servers.json
+    external: true
+    name: postgresqlcluster_pgadmin_servers_json
 
 secrets:
   pgadmin_pgpass:
