@@ -232,13 +232,23 @@ services:
 
   # pgAdmin (PostgreSQL Admin UI)
   # Note: PGADMIN_EMAIL must be a non-empty valid email if set (empty causes login 500).
+  # Pre-configured server "PostgreSQL Cluster" uses servers.json + pgpass (see MANAGE.md).
   pgadmin:
     image: dpage/pgadmin4:latest
     environment:
-      # Use literal default so empty PGADMIN_EMAIL in .env does not break login
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@admin.com}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin123}
       PGADMIN_LISTEN_PORT: "80"
+      PGADMIN_SERVER_JSON_FILE: "/pgadmin4/servers.json"
+      PGADMIN_REPLACE_SERVERS_ON_STARTUP: "True"
+      PGPASS_FILE: "/tmp/pgpass"
+    configs:
+      - source: pgadmin_servers_json
+        target: /pgadmin4/servers.json
+    secrets:
+      - source: pgadmin_pgpass
+        target: /tmp/pgpass
+        mode: 0400
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     networks:
@@ -278,6 +288,13 @@ services:
 configs:
   pg_init_replication:
     external: true
+  pgadmin_servers_json:
+    file: ./devops/servers.json
+
+secrets:
+  pgadmin_pgpass:
+    external: true
+    name: pgadmin_pgpass_postgresqlcluster
 
 volumes:
   pg_primary_data:

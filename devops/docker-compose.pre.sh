@@ -40,6 +40,19 @@ if [ -n "$MISSING_NODES" ]; then
     echo ""
 fi
 
+# pgpass secret for pgAdmin (built from .env, no file needed) — Swarm-compatible
+# Only create if missing: Docker does not allow removing a secret that is in use.
+PGADMIN_PGPASS_SECRET_NAME="${PGADMIN_PGPASS_SECRET_NAME:-pgadmin_pgpass_postgresqlcluster}"
+PG_DEFAULT_DB="${PG_DEFAULT_DB:-postgres}"
+PGPASS_LINE="pg-primary:5432:${PG_DEFAULT_DB}:${PG_ADMIN_USER}:${PG_ADMIN_PASSWORD}"
+if ! docker secret ls --format "{{.Name}}" 2>/dev/null | grep -q "^${PGADMIN_PGPASS_SECRET_NAME}$"; then
+    echo -e "${BLUE}Creating pgAdmin pgpass secret from .env (PG_ADMIN_USER / PG_ADMIN_PASSWORD)...${NC}"
+    echo -n "$PGPASS_LINE" | docker secret create "${PGADMIN_PGPASS_SECRET_NAME}" -
+    echo -e "${GREEN}Secret ${PGADMIN_PGPASS_SECRET_NAME} created${NC}"
+else
+    echo "pgAdmin pgpass secret already exists (to change password: remove stack, docker secret rm ${PGADMIN_PGPASS_SECRET_NAME}, redeploy)"
+fi
+
 # Setup PostgreSQL init replication script as Docker config
 echo -e "${BLUE}Setting up PostgreSQL replication init script...${NC}"
 

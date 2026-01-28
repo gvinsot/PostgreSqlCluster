@@ -193,6 +193,16 @@ A web-based PostgreSQL admin interface is included.
 | Access | Local IPs only (192.168.x.x, 10.x.x.x, 172.16-31.x.x) |
 | Credentials | From `PGADMIN_EMAIL` and `PGADMIN_PASSWORD` |
 
+### Pre-configured server (auto-connect)
+
+A server named **PostgreSQL Cluster** (host `pg-primary`, user from `PG_ADMIN_USER`) is loaded at startup from `devops/servers.json`. The password is taken from the **pgpass** secret, which is built from your `.env` by `docker-compose.pre.sh` (no separate file).
+
+**Setup:** Ensure your `.env` contains `PG_ADMIN_USER` and `PG_ADMIN_PASSWORD` (and optionally `PG_DEFAULT_DB`). When you deploy (e.g. via `deploy-service.sh`), the pre script creates the Docker secret `pgadmin_pgpass_postgresqlcluster` from these values, so pgAdmin can connect without prompting. This works with **Docker Swarm** (the secret is created on the manager and used by the pgAdmin service on its node).
+
+**Changing the password later:** Docker does not allow updating a secret in place. To use a new password: remove the stack (`docker stack rm <stack_name>`), remove the secret (`docker secret rm pgadmin_pgpass_postgresqlcluster`), then redeploy so the pre script recreates the secret from the updated `.env`.
+
+After login, the server **PostgreSQL Cluster** appears in the tree; click it and connect (no password prompt). To use a different PostgreSQL user in pgAdmin, set `PG_ADMIN_USER` in `.env` and edit `devops/servers.json` so the `Username` field matches.
+
 ### Security
 
 The UI is protected by:
