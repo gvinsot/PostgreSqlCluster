@@ -59,7 +59,7 @@ PGADMIN_PASSWORD=ChangeThisPgAdminPassword789!
 | `PG_DEFAULT_DB` | Default database | `postgres` |
 | `PG_REPLICATION_USER` | Replication user | `replicator` |
 | `PG_REPLICATION_PASSWORD` | Replication password | `replicator123` |
-| `PGADMIN_EMAIL` | pgAdmin login email | `admin@admin.com` |
+| `PGADMIN_EMAIL` | pgAdmin login email (must be non-empty if set) | `admin@admin.com` |
 | `PGADMIN_PASSWORD` | pgAdmin login password | `admin123` |
 
 ## Deployment
@@ -283,6 +283,14 @@ docker run --rm --network pgcluster_internal postgres:18 \
   psql -h pg-standby1 -U postgres -d postgres -c \
   "SELECT pg_is_in_recovery(), pg_last_wal_receive_lsn(), pg_last_wal_replay_lsn();"
 ```
+
+### pgAdmin Login 500 — "email must be str or bytes"
+
+If pgAdmin returns **500** on login with `TypeError: email must be str or bytes`:
+
+1. **Do not leave the email field empty.** Enter the full email used when the container was first run (e.g. `admin@admin.com` or the value of `PGADMIN_EMAIL` in your `.env`).
+2. **Ensure `PGADMIN_EMAIL` in `.env` is not empty.** If set, it must be a valid email (e.g. `admin@admin.com`). Remove the variable or set a valid value, then redeploy.
+3. **Use the same email as `PGADMIN_DEFAULT_EMAIL`.** If you changed `.env` after the first run, the existing pgAdmin data may still expect the old email; use that email to log in or remove the pgAdmin volume to start fresh.
 
 ### Authentication Errors
 
