@@ -40,10 +40,30 @@ if [ -n "$MISSING_NODES" ]; then
     echo ""
 fi
 
+# servers.json for pgAdmin: generate from .env so Username/MaintenanceDB match pgpass
+DEVOPS_DIR="$(dirname "$0")"
+PG_DEFAULT_DB="${PG_DEFAULT_DB:-postgres}"
+cat > "${DEVOPS_DIR}/servers.json" << SERVERSJSON
+{
+  "Servers": {
+    "1": {
+      "Name": "PostgreSQL Cluster",
+      "Group": "Servers",
+      "Host": "pg-primary",
+      "Port": 5432,
+      "MaintenanceDB": "${PG_DEFAULT_DB}",
+      "Username": "${PG_ADMIN_USER}",
+      "PassFile": "/tmp/pgpass",
+      "SSLMode": "prefer"
+    }
+  }
+}
+SERVERSJSON
+echo -e "${GREEN}servers.json updated for user ${PG_ADMIN_USER}${NC}"
+
 # pgpass secret for pgAdmin (built from .env, no file needed) — Swarm-compatible
 # Only create if missing: Docker does not allow removing a secret that is in use.
 PGADMIN_PGPASS_SECRET_NAME="${PGADMIN_PGPASS_SECRET_NAME:-pgadmin_pgpass_postgresqlcluster}"
-PG_DEFAULT_DB="${PG_DEFAULT_DB:-postgres}"
 PGPASS_LINE="pg-primary:5432:${PG_DEFAULT_DB}:${PG_ADMIN_USER}:${PG_ADMIN_PASSWORD}"
 if ! docker secret ls --format "{{.Name}}" 2>/dev/null | grep -q "^${PGADMIN_PGPASS_SECRET_NAME}$"; then
     echo -e "${BLUE}Creating pgAdmin pgpass secret from .env (PG_ADMIN_USER / PG_ADMIN_PASSWORD)...${NC}"
