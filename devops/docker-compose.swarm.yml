@@ -289,7 +289,7 @@ configs:
   pg_init_replication:
     external: true
   pgadmin_servers_json:
-    file: ./devops/servers.json
+    file: ./servers.json
 
 secrets:
   pgadmin_pgpass:
