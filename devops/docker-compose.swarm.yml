@@ -260,11 +260,11 @@ services:
         - "traefik.http.middlewares.pgadmin-local-only.ipallowlist.sourcerange=127.0.0.1/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 
         # Router HTTPS (principal) - pgAdmin
-        # WAF (global@file) excluded: Coraza can alter POST body and cause login 500 (email None)
+        # Only IP allowlist: WAF/security-headers/rate-limit can cause 401 on API calls after login
         - "traefik.http.routers.pgadmin.rule=Host(`pgadmin.methodinfo.fr`)"
         - "traefik.http.routers.pgadmin.entrypoints=websecure"
         - "traefik.http.routers.pgadmin.tls.certresolver=letsencrypt"
-        - "traefik.http.routers.pgadmin.middlewares=pgadmin-local-only,security-headers@file,rate-limit@file"
+        - "traefik.http.routers.pgadmin.middlewares=pgadmin-local-only"
 
         # Router HTTP (redirige vers HTTPS)
         - "traefik.http.routers.pgadmin-http.rule=Host(`pgadmin.methodinfo.fr`)"
