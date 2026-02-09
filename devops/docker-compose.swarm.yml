@@ -230,27 +230,12 @@ services:
         constraints:
           - node.hostname == server-a
 
-  # pgAdmin (PostgreSQL Admin UI)
-  # Note: PGADMIN_EMAIL must be a non-empty valid email if set (empty causes login 500).
-  # Pre-configured server "PostgreSQL Cluster" uses servers.json + pgpass (see MANAGE.md).
-  pgadmin:
-    image: dpage/pgadmin4:latest
+  # Adminer (PostgreSQL Admin UI - lightweight)
+  adminer:
+    image: adminer:latest
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@admin.com}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin123}
-      PGADMIN_LISTEN_PORT: "80"
-      PGADMIN_SERVER_JSON_FILE: "/pgadmin4/servers.json"
-      PGADMIN_REPLACE_SERVERS_ON_STARTUP: "True"
-      PGPASS_FILE: "/tmp/pgpass"
-    configs:
-      - source: pgadmin_servers_json
-        target: /pgadmin4/servers.json
-    secrets:
-      - source: pgadmin_pgpass
-        target: /tmp/pgpass
-        mode: 0400
-    volumes:
-      - pgadmin_data:/var/lib/pgadmin
+      ADMINER_DEFAULT_SERVER: pg-primary
+      ADMINER_DESIGN: pepa-linha-dark
     networks:
       - proxy
       - internal
@@ -263,24 +248,23 @@ services:
         # Activer Traefik
         - "traefik.enable=true"
 
-        # Definir le port du service pgadmin
-        - "traefik.http.services.pgadmin.loadbalancer.server.port=80"
+        # Definir le port du service adminer
+        - "traefik.http.services.adminer.loadbalancer.server.port=8080"
 
         # Middleware: Autoriser uniquement les IPs locales
-        - "traefik.http.middlewares.pgadmin-local-only.ipallowlist.sourcerange=127.0.0.1/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+        - "traefik.http.middlewares.adminer-local-only.ipallowlist.sourcerange=127.0.0.1/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 
-        # Router HTTPS (principal) - pgAdmin
-        # Only IP allowlist: WAF/security-headers/rate-limit can cause 401 on API calls after login
-        - "traefik.http.routers.pgadmin.rule=Host(`pgadmin.methodinfo.fr`)"
-        - "traefik.http.routers.pgadmin.entrypoints=websecure"
-        - "traefik.http.routers.pgadmin.tls.certresolver=letsencrypt"
-        - "traefik.http.routers.pgadmin.middlewares=pgadmin-local-only"
+        # Router HTTPS (principal) - Adminer
+        - "traefik.http.routers.adminer.rule=Host(`adminer.methodinfo.fr`)"
+        - "traefik.http.routers.adminer.entrypoints=websecure"
+        - "traefik.http.routers.adminer.tls.certresolver=letsencrypt"
+        - "traefik.http.routers.adminer.middlewares=adminer-local-only"
 
         # Router HTTP (redirige vers HTTPS)
-        - "traefik.http.routers.pgadmin-http.rule=Host(`pgadmin.methodinfo.fr`)"
-        - "traefik.http.routers.pgadmin-http.entrypoints=web"
-        - "traefik.http.routers.pgadmin-http.middlewares=redirect-to-https@file"
-        - "traefik.http.routers.pgadmin-http.service=noop@internal"
+        - "traefik.http.routers.adminer-http.rule=Host(`adminer.methodinfo.fr`)"
+        - "traefik.http.routers.adminer-http.entrypoints=web"
+        - "traefik.http.routers.adminer-http.middlewares=redirect-to-https@file"
+        - "traefik.http.routers.adminer-http.service=noop@internal"
       restart_policy:
         condition: on-failure
 
@@ -288,21 +272,11 @@ services:
 configs:
   pg_init_replication:
     external: true
-  # Created by docker-compose.pre.sh from .env (Swarm configs are immutable, so pre script replaces it each deploy)
-  pgadmin_servers_json:
-    external: true
-    name: postgresqlcluster_pgadmin_servers_json
-
-secrets:
-  pgadmin_pgpass:
-    external: true
-    name: pgadmin_pgpass_postgresqlcluster
 
 volumes:
   pg_primary_data:
   pg_standby1_data:
   pg_standby2_data:
-  pgadmin_data:
 
 networks:
   internal:

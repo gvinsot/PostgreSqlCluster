@@ -40,60 +40,6 @@ if [ -n "$MISSING_NODES" ]; then
     echo ""
 fi
 
-# servers.json for pgAdmin: generate from .env and push as Docker config (external).
-# Swarm configs are immutable — we must remove the old one and create a new one; pgadmin is scaled to 0 first.
-DEVOPS_DIR="$(dirname "$0")"
-PG_DEFAULT_DB="${PG_DEFAULT_DB:-postgres}"
-STACK_NAME="${DEPLOY_STACK_NAME:-postgresqlcluster}"
-CONFIG_NAME="${STACK_NAME}_pgadmin_servers_json"
-
-SERVERS_JSON_CONTENT=$(cat << SERVERSJSON
-{
-  "Servers": {
-    "1": {
-      "Name": "PostgreSQL Cluster",
-      "Group": "Servers",
-      "Host": "pg-primary",
-      "Port": 5432,
-      "MaintenanceDB": "${PG_DEFAULT_DB}",
-      "Username": "${PG_ADMIN_USER}",
-      "PassFile": "/tmp/pgpass",
-      "SSLMode": "prefer"
-    }
-  }
-}
-SERVERSJSON
-)
-# Write to file so compose can still validate; config is created below from same content
-echo "$SERVERS_JSON_CONTENT" > "${DEVOPS_DIR}/servers.json"
-echo -e "${GREEN}servers.json generated for user ${PG_ADMIN_USER}${NC}"
-
-# Create/update Docker config (scale pgadmin to 0, rm old config, create new, deploy will scale back to 1)
-if docker service ls --format "{{.Name}}" 2>/dev/null | grep -q "^${STACK_NAME}_pgadmin$"; then
-    echo -e "${BLUE}Scaling down pgadmin to update servers config...${NC}"
-    docker service scale "${STACK_NAME}_pgadmin=0" 2>/dev/null || true
-    sleep 2
-fi
-if docker config ls --format "{{.Name}}" 2>/dev/null | grep -q "^${CONFIG_NAME}$"; then
-    docker config rm "${CONFIG_NAME}" 2>/dev/null || true
-    sleep 1
-fi
-echo -e "${BLUE}Creating Docker config ${CONFIG_NAME}...${NC}"
-echo "$SERVERS_JSON_CONTENT" | docker config create "${CONFIG_NAME}" -
-echo -e "${GREEN}Config ${CONFIG_NAME} created${NC}"
-
-# pgpass secret for pgAdmin (built from .env, no file needed) — Swarm-compatible
-# Only create if missing: Docker does not allow removing a secret that is in use.
-PGADMIN_PGPASS_SECRET_NAME="${PGADMIN_PGPASS_SECRET_NAME:-pgadmin_pgpass_postgresqlcluster}"
-PGPASS_LINE="pg-primary:5432:${PG_DEFAULT_DB}:${PG_ADMIN_USER}:${PG_ADMIN_PASSWORD}"
-if ! docker secret ls --format "{{.Name}}" 2>/dev/null | grep -q "^${PGADMIN_PGPASS_SECRET_NAME}$"; then
-    echo -e "${BLUE}Creating pgAdmin pgpass secret from .env (PG_ADMIN_USER / PG_ADMIN_PASSWORD)...${NC}"
-    echo -n "$PGPASS_LINE" | docker secret create "${PGADMIN_PGPASS_SECRET_NAME}" -
-    echo -e "${GREEN}Secret ${PGADMIN_PGPASS_SECRET_NAME} created${NC}"
-else
-    echo "pgAdmin pgpass secret already exists (to change password: remove stack, docker secret rm ${PGADMIN_PGPASS_SECRET_NAME}, redeploy)"
-fi
-
 # Setup PostgreSQL init replication script as Docker config
 echo -e "${BLUE}Setting up PostgreSQL replication init script...${NC}"
 

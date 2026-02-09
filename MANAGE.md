@@ -24,7 +24,7 @@ This document covers the **deployment, architecture, and management** of the Pos
 | pg-standby1 | server-c | Hot standby replica (read-only) |
 | pg-standby2 | server-d | Hot standby replica (read-only) |
 | pg-init | server-a | Initialization container (runs once) |
-| pgadmin | any manager | Web admin UI (pgAdmin 4) |
+| adminer | any manager | Web admin UI (Adminer) |
 
 ## Prerequisites
 
@@ -46,10 +46,6 @@ PG_DEFAULT_DB=postgres
 # PostgreSQL Replication User
 PG_REPLICATION_USER=replicator
 PG_REPLICATION_PASSWORD=ChangeThisReplicationPassword456!
-
-# pgAdmin UI credentials
-PGADMIN_EMAIL=admin@admin.com
-PGADMIN_PASSWORD=ChangeThisPgAdminPassword789!
 ```
 
 | Variable | Description | Default |
@@ -59,8 +55,6 @@ PGADMIN_PASSWORD=ChangeThisPgAdminPassword789!
 | `PG_DEFAULT_DB` | Default database | `postgres` |
 | `PG_REPLICATION_USER` | Replication user | `replicator` |
 | `PG_REPLICATION_PASSWORD` | Replication password | `replicator123` |
-| `PGADMIN_EMAIL` | pgAdmin login email (must be non-empty if set) | `admin@admin.com` |
-| `PGADMIN_PASSWORD` | pgAdmin login password | `admin123` |
 
 ## Deployment
 
@@ -101,7 +95,7 @@ docker stack services pgcluster
 # pgcluster_pg-standby1    1/1        postgres:18
 # pgcluster_pg-standby2    1/1        postgres:18
 # pgcluster_pg-init        1/1        postgres:18
-# pgcluster_pgadmin        1/1        dpage/pgadmin4:latest
+# pgcluster_adminer        1/1        adminer:latest
 
 # Check replication status
 docker run --rm --network pgcluster_internal postgres:18 \
@@ -183,42 +177,31 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO projectus
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO projectuser;
 ```
 
-## pgAdmin (Admin UI)
+## Adminer (Admin UI)
 
-A web-based PostgreSQL admin interface is included.
+A lightweight web-based PostgreSQL admin interface is included.
 
 | Setting | Value |
 |---------|-------|
-| URL | https://pgadmin.methodinfo.fr |
+| URL | https://adminer.methodinfo.fr |
 | Access | Local IPs only (192.168.x.x, 10.x.x.x, 172.16-31.x.x) |
-| Credentials | From `PGADMIN_EMAIL` and `PGADMIN_PASSWORD` |
 
-### Pre-configured server (auto-connect)
+### Connexion
 
-A server named **PostgreSQL Cluster** (host `pg-primary`, user from `PG_ADMIN_USER`) is loaded at startup from `devops/servers.json`. The password is taken from the **pgpass** secret, which is built from your `.env` by `docker-compose.pre.sh` (no separate file).
+Adminer n'a pas de pré-configuration. À l'ouverture, remplissez :
 
-**Setup:** Ensure your `.env` contains `PG_ADMIN_USER` and `PG_ADMIN_PASSWORD` (and optionally `PG_DEFAULT_DB`). When you deploy (e.g. via `deploy-service.sh`), the pre script creates the Docker secret `pgadmin_pgpass_postgresqlcluster` from these values, so pgAdmin can connect without prompting. This works with **Docker Swarm** (the secret is created on the manager and used by the pgAdmin service on its node).
+1. **System**: PostgreSQL
+2. **Server**: `pg-primary`
+3. **Username**: valeur de `PG_ADMIN_USER`
+4. **Password**: valeur de `PG_ADMIN_PASSWORD`
+5. **Database**: (optionnel) nom de la base ou laisser vide pour voir toutes les bases
 
-**Changing the password later:** Docker does not allow updating a secret in place. To use a new password: remove the stack (`docker stack rm <stack_name>`), remove the secret (`docker secret rm pgadmin_pgpass_postgresqlcluster`), then redeploy so the pre script recreates the secret from the updated `.env`.
+### Sécurité
 
-After login, the server **PostgreSQL Cluster** appears in the tree; click it and connect (no password prompt). To use a different PostgreSQL user in pgAdmin, set `PG_ADMIN_USER` in `.env` and edit `devops/servers.json` so the `Username` field matches.
-
-### Security
-
-The UI is protected by:
-1. Email/password authentication (pgAdmin built-in)
-2. IP whitelist (local networks only)
+L'interface est protégée par :
+1. Authentification PostgreSQL (pas de compte Adminer séparé)
+2. Whitelist IP (réseaux locaux uniquement)
 3. HTTPS via Traefik
-
-### Adding the Server in pgAdmin
-
-After logging in, add a new server:
-1. **General** tab: Name = `PostgreSQL Cluster`
-2. **Connection** tab:
-   - Host: `pg-primary`
-   - Port: `5432`
-   - Username: value of `PG_ADMIN_USER`
-   - Password: value of `PG_ADMIN_PASSWORD`
 
 ## Data Persistence
 
@@ -229,7 +212,6 @@ Data is stored in Docker volumes on each node:
 | `pgcluster_pg_primary_data` | server-b | /var/lib/postgresql |
 | `pgcluster_pg_standby1_data` | server-c | /var/lib/postgresql |
 | `pgcluster_pg_standby2_data` | server-d | /var/lib/postgresql |
-| `pgcluster_pgadmin_data` | any manager | /var/lib/pgadmin |
 
 ### Backup
 
@@ -293,23 +275,6 @@ docker run --rm --network pgcluster_internal postgres:18 \
   psql -h pg-standby1 -U postgres -d postgres -c \
   "SELECT pg_is_in_recovery(), pg_last_wal_receive_lsn(), pg_last_wal_replay_lsn();"
 ```
-
-### Standby logs: "FATAL: database \"pgadmin\" does not exist"
-
-If standby (or primary) logs show connection attempts to database `pgadmin`:
-
-- **Cause:** pgAdmin (the UI) or another client is connecting with **Maintenance database** or default database set to `pgadmin`, which does not exist on the cluster (only `postgres` and your app databases exist).
-- **Fix:** In pgAdmin, right‑click the server **PostgreSQL Cluster** → **Properties** → **Connection** tab → set **Maintenance database** to `postgres` (not `pgadmin`). Save. Then reconnect or refresh the server.
-
-The pre-configured `servers.json` already uses `postgres`; this happens if the server was edited in the UI and saved with database `pgadmin`.
-
-### pgAdmin Login 500 — "email must be str or bytes"
-
-If pgAdmin returns **500** on login with `TypeError: email must be str or bytes`:
-
-1. **Do not leave the email field empty.** Enter the full email used when the container was first run (e.g. `admin@admin.com` or the value of `PGADMIN_EMAIL` in your `.env`).
-2. **Ensure `PGADMIN_EMAIL` in `.env` is not empty.** If set, it must be a valid email (e.g. `admin@admin.com`). Remove the variable or set a valid value, then redeploy.
-3. **Use the same email as `PGADMIN_DEFAULT_EMAIL`.** If you changed `.env` after the first run, the existing pgAdmin data may still expect the old email; use that email to log in or remove the pgAdmin volume to start fresh.
 
 ### Authentication Errors
 
@@ -414,8 +379,8 @@ The primary is configured with these replication parameters:
 ## Network Ports
 
 | Port | Protocol | Purpose |
-|------|----------|---------|
+|------|----------|---------------|
 | 5432 | TCP | PostgreSQL (internal only) |
-| 80 | TCP | pgAdmin (via Traefik) |
+| 8080 | TCP | Adminer (via Traefik) |
 
 No ports are exposed externally. All PostgreSQL access is through the overlay network.
