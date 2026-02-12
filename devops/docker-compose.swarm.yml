@@ -70,7 +70,7 @@ services:
             echo "Data directory empty, performing base backup from primary..."
 
             for i in $$(seq 1 36); do
-                if pg_isready -h pg-primary -p 5432 2>/dev/null; then
+                if pg_isready -h pg-primary -p 5432 -U "$$REPLICATION_USER" 2>/dev/null; then
                     echo "Primary is ready!"
                     break
                 fi
@@ -94,12 +94,13 @@ services:
         exec gosu postgres postgres \
             -c hot_standby=on
     environment:
+      PG_ADMIN_USER: ${PG_ADMIN_USER:-postgres}
       REPLICATION_USER: ${PG_REPLICATION_USER:-replicator}
       REPLICATION_PASSWORD: ${PG_REPLICATION_PASSWORD:-replicator123}
     volumes:
       - pg_standby1_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${PG_ADMIN_USER:-postgres}"]
+      test: ["CMD-SHELL", "pg_isready -U $${PG_ADMIN_USER}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -135,7 +136,7 @@ services:
             echo "Data directory empty, performing base backup from primary..."
 
             for i in $$(seq 1 36); do
-                if pg_isready -h pg-primary -p 5432 2>/dev/null; then
+                if pg_isready -h pg-primary -p 5432 -U "$$REPLICATION_USER" 2>/dev/null; then
                     echo "Primary is ready!"
                     break
                 fi
@@ -159,12 +160,13 @@ services:
         exec gosu postgres postgres \
             -c hot_standby=on
     environment:
+      PG_ADMIN_USER: ${PG_ADMIN_USER:-postgres}
       REPLICATION_USER: ${PG_REPLICATION_USER:-replicator}
       REPLICATION_PASSWORD: ${PG_REPLICATION_PASSWORD:-replicator123}
     volumes:
       - pg_standby2_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${PG_ADMIN_USER:-postgres}"]
+      test: ["CMD-SHELL", "pg_isready -U $${PG_ADMIN_USER}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -189,7 +191,7 @@ services:
         echo "Waiting for PostgreSQL primary..."
 
         for i in $$(seq 1 36); do
-            if pg_isready -h pg-primary -p 5432 2>/dev/null; then
+            if pg_isready -h pg-primary -p 5432 -U "$$PG_ADMIN_USER" 2>/dev/null; then
                 echo "pg-primary is ready!"
                 break
             fi
@@ -200,7 +202,7 @@ services:
         # Wait for standbys
         for h in pg-standby1 pg-standby2; do
             for j in $$(seq 1 36); do
-                if pg_isready -h $$h -p 5432 2>/dev/null; then
+                if pg_isready -h $$h -p 5432 -U "$$PG_ADMIN_USER" 2>/dev/null; then
                     echo "$$h is ready!"
                     break
                 fi
