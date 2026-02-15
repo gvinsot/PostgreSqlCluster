@@ -100,7 +100,7 @@ services:
     volumes:
       - pg_standby1_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${PG_ADMIN_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U $${PG_ADMIN_USER} -d postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -166,7 +166,7 @@ services:
     volumes:
       - pg_standby2_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${PG_ADMIN_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U $${PG_ADMIN_USER} -d postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
