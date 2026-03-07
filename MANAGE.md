@@ -10,7 +10,7 @@ This document covers the **deployment, architecture, and management** of the Pos
 ┌─────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   server-b  │    │    server-c     │    │    server-d     │
 │   PRIMARY   │───►│    STANDBY 1    │    │    STANDBY 2    │
-│ postgres:18 │───►│   postgres:18   │    │   postgres:18   │
+│ TimescaleDB │───►│   TimescaleDB   │    │   TimescaleDB   │
 └─────────────┘    └─────────────────┘    └─────────────────┘
        │                                          ▲
        └──────────────────────────────────────────┘
@@ -29,7 +29,7 @@ This document covers the **deployment, architecture, and management** of the Pos
 ## Prerequisites
 
 - Docker Swarm initialized with nodes: `server-a`, `server-b`, `server-c`, `server-d`
-- `postgres:18` image pulled on `server-b`, `server-c`, `server-d`
+- `PG_IMAGE` image pulled on `server-b`, `server-c`, `server-d` (default: `timescale/timescaledb:2.25.2-pg18`)
 - Overlay network connectivity between all nodes
 
 
@@ -46,6 +46,12 @@ PG_DEFAULT_DB=postgres
 # PostgreSQL Replication User
 PG_REPLICATION_USER=replicator
 PG_REPLICATION_PASSWORD=ChangeThisReplicationPassword456!
+
+# Docker Swarm stack settings
+STACK_NAME=pgcluster
+
+# PostgreSQL image with TimescaleDB support
+PG_IMAGE=timescale/timescaledb:2.25.2-pg18
 ```
 
 | Variable | Description | Default |
@@ -55,6 +61,8 @@ PG_REPLICATION_PASSWORD=ChangeThisReplicationPassword456!
 | `PG_DEFAULT_DB` | Default database | `postgres` |
 | `PG_REPLICATION_USER` | Replication user | `replicator` |
 | `PG_REPLICATION_PASSWORD` | Replication password | `replicator123` |
+| `STACK_NAME` | Docker stack name used by helper scripts | `pgcluster` |
+| `PG_IMAGE` | PostgreSQL image with TimescaleDB support | `timescale/timescaledb:2.25.2-pg18` |
 
 ## Deployment
 
@@ -91,10 +99,10 @@ docker stack services pgcluster
 
 # Expected output:
 # NAME                     REPLICAS   IMAGE
-# pgcluster_pg-primary     1/1        postgres:18
-# pgcluster_pg-standby1    1/1        postgres:18
-# pgcluster_pg-standby2    1/1        postgres:18
-# pgcluster_pg-init        1/1        postgres:18
+# pgcluster_pg-primary     1/1        timescale/timescaledb:2.25.2-pg18
+# pgcluster_pg-standby1    1/1        timescale/timescaledb:2.25.2-pg18
+# pgcluster_pg-standby2    1/1        timescale/timescaledb:2.25.2-pg18
+# pgcluster_pg-init        1/1        timescale/timescaledb:2.25.2-pg18
 # pgcluster_adminer        1/1        adminer:latest
 
 # Check replication status
@@ -256,7 +264,7 @@ docker service ps pgcluster_pg-primary --no-trunc
 
 ```bash
 # SSH to the node and pull
-docker pull postgres:18
+docker pull timescale/timescaledb:2.25.2-pg18
 ```
 
 ### Standby Not Replicating
@@ -331,13 +339,13 @@ docker stack ps pgcluster
 
 ### Update PostgreSQL Version
 
-1. Update the image tag in `docker-compose.swarm.yml`
-2. Pull new image on all nodes
+1. Update `PG_IMAGE` in your `.env` file or the image tag in `docker-compose.swarm.yml`
+2. Pull the new image on all nodes
 3. Redeploy the stack
 
 ```bash
 # On each node
-docker pull postgres:18
+docker pull timescale/timescaledb:2.25.2-pg18
 
 # Redeploy
 docker stack deploy -c devops/docker-compose.swarm.yml pgcluster
@@ -362,6 +370,28 @@ sleep 10
 docker volume rm pgcluster_pg_standby1_data
 docker service scale pgcluster_pg-standby1=1
 # The standby will automatically perform a fresh pg_basebackup
+```
+
+## TimescaleDB
+
+The cluster now starts PostgreSQL with `shared_preload_libraries=timescaledb` on the primary and both standbys.
+
+How the extension is enabled:
+
+1. `pg-init` runs `CREATE EXTENSION IF NOT EXISTS timescaledb;` on `PG_DEFAULT_DB`
+2. databases created through `./devops/create-app-user.sh` enable TimescaleDB automatically
+3. existing databases created before this change must be updated once manually:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS timescaledb;
+```
+
+To verify the extension on the primary:
+
+```bash
+docker run --rm --network pgcluster_internal -e PGPASSWORD=yourpassword postgres:18 \
+  psql -h pg-primary -U postgres -d postgres -c \
+  "SELECT extname, extversion FROM pg_extension WHERE extname = 'timescaledb';"
 ```
 
 ## Replication Configuration

@@ -12,11 +12,11 @@
 # ============================================================================
 
 # Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+RED='\\033[0;31m'
+GREEN='\\033[0;32m'
+YELLOW='\\033[1;33m'
+BLUE='\\033[0;34m'
+NC='\\033[0m' # No Color
 
 # Load .env file if it exists (for admin credentials)
 if [ -f "$(dirname "$0")/.env" ]; then
@@ -30,12 +30,15 @@ fi
 # Admin credentials for authentication
 PG_ADMIN_USER="${PG_ADMIN_USER:-postgres}"
 PG_ADMIN_PASSWORD="${PG_ADMIN_PASSWORD:-postgres123}"
+PG_IMAGE="${PG_IMAGE:-timescale/timescaledb:2.25.2-pg18}"
+STACK_NAME="${STACK_NAME:-pgcluster}"
+PG_NETWORK_NAME="${PG_NETWORK_NAME:-${STACK_NAME}_internal}"
 
 # Parse arguments
 DATABASE="$1"
 USERNAME="$2"
 PASSWORD="$3"
-ROLE="${4:-owner}"
+ROLE="${4:-readwrite}"
 
 # Validate arguments
 if [ -z "$DATABASE" ] || [ -z "$USERNAME" ] || [ -z "$PASSWORD" ]; then
@@ -73,17 +76,17 @@ case "$ROLE" in
 esac
 
 # Check if pg-primary service is running
-if ! docker service ls --filter "name=postgresqlcluster_pg-primary" --format "{{.Replicas}}" 2>/dev/null | grep -q "1/1"; then
+if ! docker service ls --filter "name=${STACK_NAME}_pg-primary" --format "{{.Replicas}}" 2>/dev/null | grep -q "1/1"; then
     echo -e "${RED}Error: PostgreSQL primary service is not running${NC}"
     echo "Make sure the PostgreSQL cluster is deployed and running."
     echo ""
-    echo "Check status: docker service ls --filter name=postgresqlcluster"
+    echo "Check status: docker service ls --filter name=${STACK_NAME}"
     exit 1
 fi
 
 # Check if the overlay network exists
-if ! docker network ls --filter "name=postgresqlcluster_internal" --format "{{.Name}}" 2>/dev/null | grep -q "postgresqlcluster_internal"; then
-    echo -e "${RED}Error: PostgreSQL network 'postgresqlcluster_internal' not found${NC}"
+if ! docker network ls --filter "name=${PG_NETWORK_NAME}" --format "{{.Name}}" 2>/dev/null | grep -q "${PG_NETWORK_NAME}"; then
+    echo -e "${RED}Error: PostgreSQL network '${PG_NETWORK_NAME}' not found${NC}"
     echo "Make sure the PostgreSQL cluster is deployed."
     exit 1
 fi
@@ -93,17 +96,17 @@ echo -e "${BLUE}Creating user '${USERNAME}' on database '${DATABASE}' with role 
 # Helper function to run psql via temporary container
 # -e PGPASSWORD is required: env vars are NOT passed from host to container by default
 run_psql() {
-    docker run --rm --network postgresqlcluster_internal \
+    docker run --rm --network "$PG_NETWORK_NAME" \
         -e PGPASSWORD="$PG_ADMIN_PASSWORD" \
-        postgres:18 \
-        psql -h pg-primary -U "$PG_ADMIN_USER" -d "$1" -t -A -c "$2" 2>&1
+        "$PG_IMAGE" \
+        psql -v ON_ERROR_STOP=1 -h pg-primary -U "$PG_ADMIN_USER" -d "$1" -t -A -c "$2" 2>&1
 }
 
 run_psql_verbose() {
-    docker run --rm --network postgresqlcluster_internal \
+    docker run --rm --network "$PG_NETWORK_NAME" \
         -e PGPASSWORD="$PG_ADMIN_PASSWORD" \
-        postgres:18 \
-        psql -h pg-primary -U "$PG_ADMIN_USER" -d "$1" -c "$2" 2>&1
+        "$PG_IMAGE" \
+        psql -v ON_ERROR_STOP=1 -h pg-primary -U "$PG_ADMIN_USER" -d "$1" -c "$2" 2>&1
 }
 
 # Step 1: Create the database if it doesn't exist
@@ -118,6 +121,14 @@ if [ "$DB_EXISTS" != "1" ]; then
 else
     echo "Database '${DATABASE}' already exists"
 fi
+
+# Step 1b: Ensure TimescaleDB is enabled on the target database
+TS_RESULT=$(run_psql "$DATABASE" "CREATE EXTENSION IF NOT EXISTS timescaledb;")
+if echo "$TS_RESULT" | grep -qi "error"; then
+    echo -e "${RED}Failed to enable TimescaleDB extension on database '${DATABASE}': $TS_RESULT${NC}"
+    exit 1
+fi
+echo -e "${GREEN}TimescaleDB extension is enabled on database '${DATABASE}'${NC}"
 
 # Step 2: Create the user if it doesn't exist
 USER_EXISTS=$(run_psql "postgres" "SELECT 1 FROM pg_roles WHERE rolname = '${USERNAME}'")
@@ -174,9 +185,10 @@ esac
 
 echo ""
 echo "User details:"
-echo "  Database: ${DATABASE}"
-echo "  Username: ${USERNAME}"
-echo "  Role:     ${ROLE}"
+echo "  Database:  ${DATABASE}"
+echo "  Username:  ${USERNAME}"
+echo "  Role:      ${ROLE}"
+echo "  Extension: timescaledb enabled"
 echo ""
 echo "Connection string:"
 echo -e "  ${GREEN}postgresql://${USERNAME}:${PASSWORD}@pg-primary:5432/${DATABASE}${NC}"

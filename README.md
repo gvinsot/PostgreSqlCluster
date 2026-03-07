@@ -72,10 +72,10 @@ services:
   your-service:
     image: your-image
     networks:
-      - postgresqlcluster_internal
+      - pgcluster_internal
 
 networks:
-  postgresqlcluster_internal:
+  pgcluster_internal:
     external: true
 ```
 
@@ -93,6 +93,29 @@ Then use the credentials in your service:
 ```yaml
 environment:
   - DATABASE_URL=postgresql://appuser:secretpass@pg-primary:5432/myapp
+```
+
+## TimescaleDB
+
+The cluster now ships with TimescaleDB enabled.
+
+- PostgreSQL services use a TimescaleDB-capable image (`PG_IMAGE`, default: `timescale/timescaledb:2.25.2-pg18`)
+- `shared_preload_libraries=timescaledb` is enabled on the primary and both standbys
+- the `pg-init` service creates `timescaledb` automatically on `PG_DEFAULT_DB`
+- databases created with `./devops/create-app-user.sh` enable the extension automatically
+
+For a database created before this change, run once on the primary:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS timescaledb;
+```
+
+You can verify the extension with:
+
+```bash
+docker run --rm --network pgcluster_internal postgres:18 \
+  psql -h pg-primary -U postgres -d postgres -c \
+  "SELECT extname, extversion FROM pg_extension WHERE extname = 'timescaledb';"
 ```
 
 ## Connection Options
@@ -138,12 +161,12 @@ postgresql://user:pass@pg-standby1:5432,pg-standby2:5432/mydb?target_session_att
 Test from any container on the network:
 
 ```bash
-docker run --rm --network postgresqlcluster_internal postgres:18 \
+docker run --rm --network pgcluster_internal postgres:18 \
   pg_isready -h pg-primary -p 5432 -U postgres
 ```
 
 ```bash
-docker run --rm --network postgresqlcluster_internal postgres:18 \
+docker run --rm --network pgcluster_internal postgres:18 \
   psql -h pg-primary -U postgres -d postgres -c "SELECT version();"
 ```
 

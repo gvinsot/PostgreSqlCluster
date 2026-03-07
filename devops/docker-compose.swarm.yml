@@ -1,10 +1,9 @@
-
 version: "3.9"
 
 services:
   # PostgreSQL Primary (server-b)
   pg-primary:
-    image: postgres:18
+    image: ${PG_IMAGE:-timescale/timescaledb:2.25.2-pg18}
     hostname: pg-primary
     # Phase 1: Sans auth stricte pour init. Phase 2: pg_hba.conf sera mis a jour
     command:
@@ -21,6 +20,8 @@ services:
       - wal_keep_size=1GB
       - -c
       - listen_addresses=*
+      - -c
+      - shared_preload_libraries=timescaledb
     environment:
       POSTGRES_USER: ${PG_ADMIN_USER:-postgres}
       POSTGRES_PASSWORD: ${PG_ADMIN_PASSWORD:-postgres123}
@@ -52,12 +53,12 @@ services:
 
   # PostgreSQL Standby 1 (server-c)
   pg-standby1:
-    image: postgres:18
+    image: ${PG_IMAGE:-timescale/timescaledb:2.25.2-pg18}
     hostname: pg-standby1
     entrypoint: ["bash", "-c"]
     command:
       - |
-        # PGDATA is set by the postgres:18 image (e.g. /var/lib/postgresql/18/main)
+        # PGDATA is set by the image (e.g. /var/lib/postgresql/18/main)
         # Ensure data directory exists with correct ownership
         mkdir -p "$$PGDATA"
         chown postgres:postgres /var/lib/postgresql
@@ -92,7 +93,8 @@ services:
         chown postgres:postgres "$$PGDATA/standby.signal"
 
         exec gosu postgres postgres \
-            -c hot_standby=on
+            -c hot_standby=on \
+            -c shared_preload_libraries=timescaledb
     environment:
       PG_ADMIN_USER: ${PG_ADMIN_USER:-postgres}
       REPLICATION_USER: ${PG_REPLICATION_USER:-replicator}
@@ -118,12 +120,12 @@ services:
 
   # PostgreSQL Standby 2 (server-d)
   pg-standby2:
-    image: postgres:18
+    image: ${PG_IMAGE:-timescale/timescaledb:2.25.2-pg18}
     hostname: pg-standby2
     entrypoint: ["bash", "-c"]
     command:
       - |
-        # PGDATA is set by the postgres:18 image (e.g. /var/lib/postgresql/18/main)
+        # PGDATA is set by the image (e.g. /var/lib/postgresql/18/main)
         # Ensure data directory exists with correct ownership
         mkdir -p "$$PGDATA"
         chown postgres:postgres /var/lib/postgresql
@@ -158,7 +160,8 @@ services:
         chown postgres:postgres "$$PGDATA/standby.signal"
 
         exec gosu postgres postgres \
-            -c hot_standby=on
+            -c hot_standby=on \
+            -c shared_preload_libraries=timescaledb
     environment:
       PG_ADMIN_USER: ${PG_ADMIN_USER:-postgres}
       REPLICATION_USER: ${PG_REPLICATION_USER:-replicator}
@@ -184,7 +187,7 @@ services:
 
   # PostgreSQL Cluster Initializer (runs once, checks replication status)
   pg-init:
-    image: postgres:18
+    image: ${PG_IMAGE:-timescale/timescaledb:2.25.2-pg18}
     entrypoint: ["bash", "-c"]
     command:
       - |
@@ -212,8 +215,18 @@ services:
         done
 
         echo ""
+        echo "Ensuring TimescaleDB extension is enabled on $$PG_DEFAULT_DB..."
+        PGPASSWORD="$$PG_ADMIN_PASSWORD" psql -v ON_ERROR_STOP=1 -h pg-primary -U "$$PG_ADMIN_USER" -d "$$PG_DEFAULT_DB" -c \
+            "CREATE EXTENSION IF NOT EXISTS timescaledb;"
+
+        echo ""
+        echo "Checking TimescaleDB status..."
+        PGPASSWORD="$$PG_ADMIN_PASSWORD" psql -v ON_ERROR_STOP=1 -h pg-primary -U "$$PG_ADMIN_USER" -d "$$PG_DEFAULT_DB" -c \
+            "SELECT extname, extversion FROM pg_extension WHERE extname = 'timescaledb';"
+
+        echo ""
         echo "Checking replication status..."
-        PGPASSWORD="${PG_ADMIN_PASSWORD}" psql -h pg-primary -U "${PG_ADMIN_USER}" -d postgres -c \
+        PGPASSWORD="$$PG_ADMIN_PASSWORD" psql -v ON_ERROR_STOP=1 -h pg-primary -U "$$PG_ADMIN_USER" -d postgres -c \
             "SELECT client_addr, state, sent_lsn, write_lsn, flush_lsn, replay_lsn FROM pg_stat_replication;"
 
         echo ""
@@ -221,6 +234,7 @@ services:
     environment:
       PG_ADMIN_USER: ${PG_ADMIN_USER:-postgres}
       PG_ADMIN_PASSWORD: ${PG_ADMIN_PASSWORD:-postgres123}
+      PG_DEFAULT_DB: ${PG_DEFAULT_DB:-postgres}
     networks:
       - internal
     deploy:
@@ -269,7 +283,6 @@ services:
         - "traefik.http.routers.adminer-http.service=noop@internal"
       restart_policy:
         condition: on-failure
-
 
 configs:
   pg_init_replication:
