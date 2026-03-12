@@ -5,7 +5,7 @@ services:
   pg-primary:
     image: ${PG_IMAGE:-timescale/timescaledb:2.25.2-pg18}
     hostname: pg-primary
-    # Phase 1: Sans auth stricte pour init. Phase 2: pg_hba.conf sera mis a jour
+    # Note: shared_preload_libraries=timescaledb is handled by the image
     command:
       - postgres
       - -c
@@ -20,8 +20,6 @@ services:
       - wal_keep_size=1GB
       - -c
       - listen_addresses=*
-      - -c
-      - shared_preload_libraries=timescaledb
     environment:
       POSTGRES_USER: ${PG_ADMIN_USER:-postgres}
       POSTGRES_PASSWORD: ${PG_ADMIN_PASSWORD:-postgres123}
@@ -92,9 +90,9 @@ services:
         touch "$$PGDATA/standby.signal"
         chown postgres:postgres "$$PGDATA/standby.signal"
 
+        # Note: shared_preload_libraries=timescaledb is handled by the image
         exec gosu postgres postgres \
-            -c hot_standby=on \
-            -c shared_preload_libraries=timescaledb
+            -c hot_standby=on
     environment:
       PG_ADMIN_USER: ${PG_ADMIN_USER:-postgres}
       REPLICATION_USER: ${PG_REPLICATION_USER:-replicator}
@@ -159,9 +157,9 @@ services:
         touch "$$PGDATA/standby.signal"
         chown postgres:postgres "$$PGDATA/standby.signal"
 
+        # Note: shared_preload_libraries=timescaledb is handled by the image
         exec gosu postgres postgres \
-            -c hot_standby=on \
-            -c shared_preload_libraries=timescaledb
+            -c hot_standby=on
     environment:
       PG_ADMIN_USER: ${PG_ADMIN_USER:-postgres}
       REPLICATION_USER: ${PG_REPLICATION_USER:-replicator}
