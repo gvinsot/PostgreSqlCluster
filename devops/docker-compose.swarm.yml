@@ -6,20 +6,24 @@ services:
     image: ${PG_IMAGE:-timescale/timescaledb:2.25.2-pg18}
     hostname: pg-primary
     # Note: shared_preload_libraries=timescaledb is handled by the image
+    entrypoint: ["bash", "-c"]
     command:
-      - postgres
-      - -c
-      - wal_level=replica
-      - -c
-      - max_wal_senders=10
-      - -c
-      - max_replication_slots=10
-      - -c
-      - hot_standby=on
-      - -c
-      - wal_keep_size=1GB
-      - -c
-      - listen_addresses=*
+      - |
+        # Fix ownership on the volume mount so the postgres user can access PGDATA
+        mkdir -p "$$PGDATA"
+        chown postgres:postgres /var/lib/postgresql
+        PARENT=$$(dirname "$$PGDATA")
+        [ -d "$$PARENT" ] && chown postgres:postgres "$$PARENT"
+        chown -R postgres:postgres "$$PGDATA"
+        chmod 0700 "$$PGDATA"
+
+        exec docker-entrypoint.sh postgres \
+            -c wal_level=replica \
+            -c max_wal_senders=10 \
+            -c max_replication_slots=10 \
+            -c hot_standby=on \
+            -c wal_keep_size=1GB \
+            -c listen_addresses=*
     environment:
       POSTGRES_USER: ${PG_ADMIN_USER:-postgres}
       POSTGRES_PASSWORD: ${PG_ADMIN_PASSWORD:-postgres123}
