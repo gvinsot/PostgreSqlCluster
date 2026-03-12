@@ -92,6 +92,62 @@ else
     echo "pg_init_replication Docker config already exists"
 fi
 
+# Setup PostgreSQL standby init script as Docker config
+echo -e "${BLUE}Setting up PostgreSQL standby init script...${NC}"
+
+if ! docker config ls 2>/dev/null | grep -q "pg_standby_init"; then
+    echo "Creating pg_standby_init Docker config..."
+
+    cat > /tmp/pg-standby-init.sh << 'STANDBYEOF'
+#!/bin/bash
+set -e
+
+echo "Setting up PostgreSQL standby node..."
+
+PGDATA="${PGDATA:-/var/lib/postgresql/data/pgdata}"
+
+# Check if data directory is empty
+if [ -f "${PGDATA}/PG_VERSION" ]; then
+    echo "Data directory already contains data, skipping standby setup"
+    exit 0
+fi
+
+# Wait for primary to be ready
+echo "Waiting for PostgreSQL primary to be ready..."
+until pg_isready -h "${PRIMARY_HOST}" -p 5432 -U "${REPLICATION_USER}"; do
+    echo "Primary not ready yet, waiting..."
+    sleep 2
+done
+
+echo "Primary is ready, starting pg_basebackup..."
+
+# Perform base backup
+pg_basebackup \
+    -h "${PRIMARY_HOST}" \
+    -p 5432 \
+    -U "${REPLICATION_USER}" \
+    -D "${PGDATA}" \
+    -Fp \
+    -Xs \
+    -P \
+    -R \
+    --wal-method=stream
+
+echo "Base backup completed successfully"
+
+# Create standby.signal file to indicate this is a standby
+touch "${PGDATA}/standby.signal"
+
+echo "Standby setup complete"
+STANDBYEOF
+
+    docker config create pg_standby_init /tmp/pg-standby-init.sh
+    rm /tmp/pg-standby-init.sh
+    echo -e "${GREEN}pg_standby_init Docker config created${NC}"
+else
+    echo "pg_standby_init Docker config already exists"
+fi
+
 # Function to get the node where pg-primary is running
 get_primary_node() {
     docker service ps "${STACK_NAME}_pg-primary" --filter "desired-state=running" --format "{{.Node}}" 2>/dev/null | head -1

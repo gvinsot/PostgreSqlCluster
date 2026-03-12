@@ -51,8 +51,14 @@ services:
       POSTGRES_USER: ${PG_ADMIN_USER:-postgres}
       POSTGRES_PASSWORD: ${PG_ADMIN_PASSWORD:-postgres123}
       PGDATA: /var/lib/postgresql/data/pgdata
+      PRIMARY_HOST: pg-primary
+      REPLICATION_USER: ${PG_REPLICATION_USER:-replicator}
+      REPLICATION_PASSWORD: ${PG_REPLICATION_PASSWORD:-replicator123}
     volumes:
       - pg-standby1-data:/var/lib/postgresql/data
+    configs:
+      - source: pg_standby_init
+        target: /docker-entrypoint-initdb.d/pg_standby_init.sh
     networks:
       - pgcluster_internal
     deploy:
@@ -90,8 +96,14 @@ services:
       POSTGRES_USER: ${PG_ADMIN_USER:-postgres}
       POSTGRES_PASSWORD: ${PG_ADMIN_PASSWORD:-postgres123}
       PGDATA: /var/lib/postgresql/data/pgdata
+      PRIMARY_HOST: pg-primary
+      REPLICATION_USER: ${PG_REPLICATION_USER:-replicator}
+      REPLICATION_PASSWORD: ${PG_REPLICATION_PASSWORD:-replicator123}
     volumes:
       - pg-standby2-data:/var/lib/postgresql/data
+    configs:
+      - source: pg_standby_init
+        target: /docker-entrypoint-initdb.d/pg_standby_init.sh
     networks:
       - pgcluster_internal
     deploy:
@@ -168,4 +180,6 @@ networks:
 
 configs:
   pg_init_replication:
+    external: true
+  pg_standby_init:
     external: true
