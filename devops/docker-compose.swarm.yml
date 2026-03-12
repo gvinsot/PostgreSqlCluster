@@ -1,230 +1,171 @@
 version: "3.9"
 
 services:
-  minecraft:
-    image: itzg/minecraft-server:java21
+  # PostgreSQL Primary node
+  pg-primary:
+    image: ${PG_IMAGE:-timescale/timescaledb:2.25.2-pg18}
     environment:
-      # --- Serveur ---
-      EULA: "TRUE"
-      TYPE: PAPER
-      VERSION: ${MC_VERSION:-LATEST}
-      MEMORY: ${MC_MEMORY:-4G}
-      MAX_PLAYERS: ${MC_MAX_PLAYERS:-20}
-      MOTD: ${MC_MOTD:-§6Bienvenue sur le serveur Minecraft !}
-      DIFFICULTY: ${MC_DIFFICULTY:-normal}
-      MODE: ${MC_GAMEMODE:-survival}
-      LEVEL_TYPE: ${MC_LEVEL_TYPE:-DEFAULT}
-      SEED: ${MC_SEED:-}
-      VIEW_DISTANCE: ${MC_VIEW_DISTANCE:-12}
-      SIMULATION_DISTANCE: ${MC_SIMULATION_DISTANCE:-8}
-      SERVER_NAME: ${MC_SERVER_NAME:-MinecraftServer}
-
-      # --- Sécurité ---
-      ONLINE_MODE: "TRUE"
-      ENABLE_WHITELIST: "TRUE"
-      ENFORCE_WHITELIST: "TRUE"
-      ENABLE_COMMAND_BLOCK: "FALSE"
-      SPAWN_PROTECTION: ${MC_SPAWN_PROTECTION:-16}
-      MAX_TICK_TIME: "60000"
-      PREVENT_PROXY_CONNECTIONS: "TRUE"
-      ENABLE_RCON: "TRUE"
-      RCON_PASSWORD: ${RCON_PASSWORD:?RCON_PASSWORD requis}
-      RCON_PORT: "25575"
-      SNOOPER_ENABLED: "FALSE"
-      ENABLE_QUERY: "FALSE"
-
-      # --- Réseau ---
-      SERVER_PORT: "25565"
-
-      # --- Geyser + Floodgate (compatibilité Bedrock) ---
-      PLUGINS: |
-        https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot
-        https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot
-
-      # --- BlueMap (via Modrinth, plus fiable que les URLs GitHub) ---
-      MODRINTH_PROJECTS: bluemap
-
-      # Copier les configs BlueMap (accept-download, webserver) avant le démarrage
-      COPY_CONFIG_SRC: /bluemap-config
-      COPY_CONFIG_DEST: /data/plugins/BlueMap
-
-      # --- Performance PaperMC ---
-      USE_AIKAR_FLAGS: "TRUE"
-      ENABLE_ROLLING_LOGS: "TRUE"
-      TZ: ${TZ:-Europe/Paris}
-
+      POSTGRES_USER: ${PG_ADMIN_USER:-postgres}
+      POSTGRES_PASSWORD: ${PG_ADMIN_PASSWORD:-postgres123}
+      POSTGRES_DB: ${PG_DEFAULT_DB:-postgres}
+      REPLICATION_USER: ${PG_REPLICATION_USER:-replicator}
+      REPLICATION_PASSWORD: ${PG_REPLICATION_PASSWORD:-replicator123}
+      PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
-      - minecraft-data:/data
-
+      - pg-primary-data:/var/lib/postgresql/data
     configs:
-      - source: bluemap_core_conf
-        target: /bluemap-config/core.conf
-      - source: bluemap_webserver_conf
-        target: /bluemap-config/webserver.conf
-
+      - source: pg_init_replication
+        target: /docker-entrypoint-initdb.d/pg_init_replication.sh
     networks:
-      - proxy
-      - minecraft-net
-
-    stdin_open: true
-    tty: true
-
-    healthcheck:
-      test: mc-health
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 120s
-
+      - pgcluster_internal
     deploy:
       replicas: 1
       restart_policy:
         condition: on-failure
         delay: 10s
         max_attempts: 5
-        window: 120s
       placement:
         constraints:
-          - node.hostname == server-c
+          - node.hostname == server-b
       resources:
         limits:
-          memory: ${MC_MEMORY_LIMIT:-6G}
+          memory: ${PG_MEMORY_LIMIT:-8G}
         reservations:
-          memory: ${MC_MEMORY:-4G}
-      labels:
-        - "traefik.enable=true"
-
-        # --- Routage TCP : Minecraft Java Edition (port 25565) ---
-        - "traefik.tcp.routers.minecraft-java.rule=HostSNI(`*`)"
-        - "traefik.tcp.routers.minecraft-java.entrypoints=minecraft-java"
-        - "traefik.tcp.routers.minecraft-java.service=minecraft-java"
-        - "traefik.tcp.services.minecraft-java.loadbalancer.server.port=25565"
-
-        # --- Routage UDP : Minecraft Bedrock Edition (port 19132) ---
-        - "traefik.udp.routers.minecraft-bedrock.entrypoints=minecraft-bedrock"
-        - "traefik.udp.routers.minecraft-bedrock.service=minecraft-bedrock"
-        - "traefik.udp.services.minecraft-bedrock.loadbalancer.server.port=19132"
-
-        # --- Traefik HTTP : carte web BlueMap ---
-        # Service BlueMap
-        - "traefik.http.services.minecraft-map.loadbalancer.server.port=${BLUEMAP_PORT:-8100}"
-
-        # Router HTTPS - Carte web
-        - "traefik.http.routers.minecraft-map.rule=Host(`${MAP_DOMAIN:-map.minecraft.vinsot.fr}`)"
-        - "traefik.http.routers.minecraft-map.entrypoints=websecure"
-        - "traefik.http.routers.minecraft-map.tls.certresolver=letsencrypt"
-        - "traefik.http.routers.minecraft-map.middlewares=global@file"
-        - "traefik.http.routers.minecraft-map.service=minecraft-map"
-
-        # Router HTTP - Redirection vers HTTPS
-        - "traefik.http.routers.minecraft-map-http.rule=Host(`${MAP_DOMAIN:-map.minecraft.vinsot.fr}`)"
-        - "traefik.http.routers.minecraft-map-http.entrypoints=web"
-        - "traefik.http.routers.minecraft-map-http.middlewares=redirect-to-https@file"
-        - "traefik.http.routers.minecraft-map-http.service=noop@internal"
-
-  # --- Interface web whitelist (accès local uniquement) ---
-  whitelist-web:
-    image: registry.methodinfo.fr/minecraft-whitelist-web:latest
-    build:
-      context: ..
-      dockerfile: whitelist-web/Dockerfile
-    environment:
-      RCON_HOST: minecraft
-      RCON_PORT: "25575"
-      RCON_PASSWORD: ${RCON_PASSWORD:?RCON_PASSWORD requis}
-      HTTP_PORT: "8080"
-
-    networks:
-      - proxy
-      - minecraft-net
-
+          memory: ${PG_MEMORY:-4G}
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/')"]
-      interval: 30s
+      test: ["CMD-SHELL", "pg_isready -U ${PG_ADMIN_USER:-postgres} -d ${PG_DEFAULT_DB:-postgres}"]
+      interval: 10s
       timeout: 5s
-      retries: 3
-      start_period: 5s
+      retries: 5
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+  # PostgreSQL Standby node 1
+  pg-standby1:
+    image: ${PG_IMAGE:-timescale/timescaledb:2.25.2-pg18}
+    environment:
+      POSTGRES_USER: ${PG_ADMIN_USER:-postgres}
+      POSTGRES_PASSWORD: ${PG_ADMIN_PASSWORD:-postgres123}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - pg-standby1-data:/var/lib/postgresql/data
+    networks:
+      - pgcluster_internal
     deploy:
       replicas: 1
       restart_policy:
         condition: on-failure
         delay: 10s
+        max_attempts: 5
       placement:
         constraints:
           - node.hostname == server-c
       resources:
         limits:
-          memory: 64M
+          memory: ${PG_MEMORY_LIMIT:-8G}
         reservations:
-          memory: 32M
-      labels:
-        - "traefik.enable=true"
+          memory: ${PG_MEMORY:-4G}
+    depends_on:
+      - pg-primary
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_ADMIN_USER:-postgres} -d ${PG_DEFAULT_DB:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-        # Service
-        - "traefik.http.services.minecraft-whitelist.loadbalancer.server.port=8080"
-
-        # Router HTTPS — accès réseau local uniquement (dashboard-allowlist)
-        - "traefik.http.routers.minecraft-whitelist.rule=Host(`${WHITELIST_DOMAIN:-whitelist.minecraft.vinsot.fr}`)"
-        - "traefik.http.routers.minecraft-whitelist.entrypoints=websecure"
-        - "traefik.http.routers.minecraft-whitelist.tls.certresolver=letsencrypt"
-        - "traefik.http.routers.minecraft-whitelist.middlewares=dashboard-allowlist@file"
-        - "traefik.http.routers.minecraft-whitelist.service=minecraft-whitelist"
-
-        # Router HTTP — redirection vers HTTPS
-        - "traefik.http.routers.minecraft-whitelist-http.rule=Host(`${WHITELIST_DOMAIN:-whitelist.minecraft.vinsot.fr}`)"
-        - "traefik.http.routers.minecraft-whitelist-http.entrypoints=web"
-        - "traefik.http.routers.minecraft-whitelist-http.middlewares=redirect-to-https@file"
-        - "traefik.http.routers.minecraft-whitelist-http.service=noop@internal"
-
-  # --- Sauvegarde automatique ---
-  backup:
-    image: itzg/mc-backup:latest
+  # PostgreSQL Standby node 2
+  pg-standby2:
+    image: ${PG_IMAGE:-timescale/timescaledb:2.25.2-pg18}
     environment:
-      BACKUP_INTERVAL: ${BACKUP_INTERVAL:-24h}
-      RCON_HOST: minecraft
-      RCON_PORT: "25575"
-      RCON_PASSWORD: ${RCON_PASSWORD:?RCON_PASSWORD requis}
-      PAUSE_IF_NO_PLAYERS: "true"
-      PLAYERS_ONLINE_CHECK_INTERVAL: "5m"
-      PRUNE_BACKUPS_DAYS: ${BACKUP_RETENTION_DAYS:-7}
-      BACKUP_METHOD: tar
-      DEST_DIR: /backups
-      SRC_DIR: /data/world
-      TZ: ${TZ:-Europe/Paris}
-
+      POSTGRES_USER: ${PG_ADMIN_USER:-postgres}
+      POSTGRES_PASSWORD: ${PG_ADMIN_PASSWORD:-postgres123}
+      PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
-      - minecraft-data:/data:ro
-      - minecraft-backups:/backups
-
+      - pg-standby2-data:/var/lib/postgresql/data
     networks:
-      - proxy
-      - minecraft-net
-
+      - pgcluster_internal
     deploy:
       replicas: 1
       restart_policy:
         condition: on-failure
-        delay: 30s
+        delay: 10s
+        max_attempts: 5
       placement:
         constraints:
-          - node.hostname == server-c
+          - node.hostname == server-d
+      resources:
+        limits:
+          memory: ${PG_MEMORY_LIMIT:-8G}
+        reservations:
+          memory: ${PG_MEMORY:-4G}
+    depends_on:
+      - pg-primary
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_ADMIN_USER:-postgres} -d ${PG_DEFAULT_DB:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # PostgreSQL initialization service (runs once to enable TimescaleDB)
+  pg-init:
+    image: ${PG_IMAGE:-timescale/timescaledb:2.25.2-pg18}
+    environment:
+      PGHOST: pg-primary
+      PGUSER: ${PG_ADMIN_USER:-postgres}
+      PGPASSWORD: ${PG_ADMIN_PASSWORD:-postgres123}
+      PGDATABASE: ${PG_DEFAULT_DB:-postgres}
+    networks:
+      - pgcluster_internal
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+      placement:
+        constraints:
+          - node.hostname == server-b
+    command: >
+      bash -c "
+      until pg_isready -h pg-primary -U ${PG_ADMIN_USER:-postgres}; do
+        echo 'Waiting for PostgreSQL primary...';
+        sleep 2;
+      done;
+      psql -h pg-primary -U ${PG_ADMIN_USER:-postgres} -d ${PG_DEFAULT_DB:-postgres} -c 'CREATE EXTENSION IF NOT EXISTS timescaledb;'
+      "
+    depends_on:
+      - pg-primary
 
 volumes:
-  minecraft-data:
+  pg-primary-data:
     driver: local
-  minecraft-backups:
+  pg-standby1-data:
+    driver: local
+  pg-standby2-data:
     driver: local
 
 networks:
-  proxy:
-    external: true
-  minecraft-net:
+  pgcluster_internal:
     driver: overlay
     attachable: true
 
 configs:
-  bluemap_core_conf:
-    file: ./bluemap/core.conf
-  bluemap_webserver_conf:
-    file: ./bluemap/webserver.conf
+  pg_init_replication:
+    external: true
