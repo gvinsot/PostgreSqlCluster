@@ -66,7 +66,7 @@ services:
         chown postgres:postgres /var/lib/postgresql
         PARENT=$$(dirname "$$PGDATA")
         [ -d "$$PARENT" ] && chown postgres:postgres "$$PARENT"
-        chown postgres:postgres "$$PGDATA"
+        chown -R postgres:postgres "$$PGDATA"
         chmod 0700 "$$PGDATA"
 
         if [ ! -s "$$PGDATA/PG_VERSION" ]; then
@@ -133,7 +133,7 @@ services:
         chown postgres:postgres /var/lib/postgresql
         PARENT=$$(dirname "$$PGDATA")
         [ -d "$$PARENT" ] && chown postgres:postgres "$$PARENT"
-        chown postgres:postgres "$$PGDATA"
+        chown -R postgres:postgres "$$PGDATA"
         chmod 0700 "$$PGDATA"
 
         if [ ! -s "$$PGDATA/PG_VERSION" ]; then
