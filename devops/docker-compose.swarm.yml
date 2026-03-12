@@ -1,301 +1,230 @@
 version: "3.9"
 
 services:
-  # PostgreSQL Primary (server-b)
-  pg-primary:
-    image: ${PG_IMAGE:-timescale/timescaledb:2.25.2-pg18}
-    hostname: pg-primary
-    # Phase 1: Sans auth stricte pour init. Phase 2: pg_hba.conf sera mis a jour
-    command:
-      - postgres
-      - -c
-      - wal_level=replica
-      - -c
-      - max_wal_senders=10
-      - -c
-      - max_replication_slots=10
-      - -c
-      - hot_standby=on
-      - -c
-      - wal_keep_size=1GB
-      - -c
-      - listen_addresses=*
-      - -c
-      - shared_preload_libraries=timescaledb
+  minecraft:
+    image: itzg/minecraft-server:java21
     environment:
-      POSTGRES_USER: ${PG_ADMIN_USER:-postgres}
-      POSTGRES_PASSWORD: ${PG_ADMIN_PASSWORD:-postgres123}
-      POSTGRES_DB: ${PG_DEFAULT_DB:-postgres}
-      REPLICATION_USER: ${PG_REPLICATION_USER:-replicator}
-      REPLICATION_PASSWORD: ${PG_REPLICATION_PASSWORD:-replicator123}
-    configs:
-      - source: pg_init_replication
-        target: /docker-entrypoint-initdb.d/01-init-replication.sh
-        mode: 0755
+      # --- Serveur ---
+      EULA: "TRUE"
+      TYPE: PAPER
+      VERSION: ${MC_VERSION:-LATEST}
+      MEMORY: ${MC_MEMORY:-4G}
+      MAX_PLAYERS: ${MC_MAX_PLAYERS:-20}
+      MOTD: ${MC_MOTD:-§6Bienvenue sur le serveur Minecraft !}
+      DIFFICULTY: ${MC_DIFFICULTY:-normal}
+      MODE: ${MC_GAMEMODE:-survival}
+      LEVEL_TYPE: ${MC_LEVEL_TYPE:-DEFAULT}
+      SEED: ${MC_SEED:-}
+      VIEW_DISTANCE: ${MC_VIEW_DISTANCE:-12}
+      SIMULATION_DISTANCE: ${MC_SIMULATION_DISTANCE:-8}
+      SERVER_NAME: ${MC_SERVER_NAME:-MinecraftServer}
+
+      # --- Sécurité ---
+      ONLINE_MODE: "TRUE"
+      ENABLE_WHITELIST: "TRUE"
+      ENFORCE_WHITELIST: "TRUE"
+      ENABLE_COMMAND_BLOCK: "FALSE"
+      SPAWN_PROTECTION: ${MC_SPAWN_PROTECTION:-16}
+      MAX_TICK_TIME: "60000"
+      PREVENT_PROXY_CONNECTIONS: "TRUE"
+      ENABLE_RCON: "TRUE"
+      RCON_PASSWORD: ${RCON_PASSWORD:?RCON_PASSWORD requis}
+      RCON_PORT: "25575"
+      SNOOPER_ENABLED: "FALSE"
+      ENABLE_QUERY: "FALSE"
+
+      # --- Réseau ---
+      SERVER_PORT: "25565"
+
+      # --- Geyser + Floodgate (compatibilité Bedrock) ---
+      PLUGINS: |
+        https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot
+        https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot
+
+      # --- BlueMap (via Modrinth, plus fiable que les URLs GitHub) ---
+      MODRINTH_PROJECTS: bluemap
+
+      # Copier les configs BlueMap (accept-download, webserver) avant le démarrage
+      COPY_CONFIG_SRC: /bluemap-config
+      COPY_CONFIG_DEST: /data/plugins/BlueMap
+
+      # --- Performance PaperMC ---
+      USE_AIKAR_FLAGS: "TRUE"
+      ENABLE_ROLLING_LOGS: "TRUE"
+      TZ: ${TZ:-Europe/Paris}
+
     volumes:
-      - pg_primary_data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+      - minecraft-data:/data
+
+    configs:
+      - source: bluemap_core_conf
+        target: /bluemap-config/core.conf
+      - source: bluemap_webserver_conf
+        target: /bluemap-config/webserver.conf
+
     networks:
-      - internal
+      - proxy
+      - minecraft-net
+
+    stdin_open: true
+    tty: true
+
+    healthcheck:
+      test: mc-health
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
     deploy:
       replicas: 1
-      placement:
-        constraints:
-          - node.hostname == server-b
       restart_policy:
         condition: on-failure
-        delay: 5s
-
-  # PostgreSQL Standby 1 (server-c)
-  pg-standby1:
-    image: ${PG_IMAGE:-timescale/timescaledb:2.25.2-pg18}
-    hostname: pg-standby1
-    entrypoint: ["bash", "-c"]
-    command:
-      - |
-        # PGDATA is set by the image (e.g. /var/lib/postgresql/18/main)
-        # Ensure data directory exists with correct ownership
-        mkdir -p "$$PGDATA"
-        chown postgres:postgres /var/lib/postgresql
-        PARENT=$$(dirname "$$PGDATA")
-        [ -d "$$PARENT" ] && chown postgres:postgres "$$PARENT"
-        chown postgres:postgres "$$PGDATA"
-        chmod 0700 "$$PGDATA"
-
-        if [ ! -s "$$PGDATA/PG_VERSION" ]; then
-            echo "Data directory empty, performing base backup from primary..."
-
-            for i in $$(seq 1 36); do
-                if pg_isready -h pg-primary -p 5432 -U "$$REPLICATION_USER" 2>/dev/null; then
-                    echo "Primary is ready!"
-                    break
-                fi
-                echo "Attempt $$i/36: primary not ready, waiting 5s..."
-                sleep 5
-            done
-
-            export PGPASSWORD="$${REPLICATION_PASSWORD}"
-            gosu postgres pg_basebackup \
-                -h pg-primary -p 5432 -U "$${REPLICATION_USER}" \
-                -D "$$PGDATA" -Fp -Xs -P -R
-            unset PGPASSWORD
-
-            echo "Base backup complete"
-        fi
-
-        # Ensure standby mode
-        touch "$$PGDATA/standby.signal"
-        chown postgres:postgres "$$PGDATA/standby.signal"
-
-        exec gosu postgres postgres \
-            -c hot_standby=on \
-            -c shared_preload_libraries=timescaledb
-    environment:
-      PG_ADMIN_USER: ${PG_ADMIN_USER:-postgres}
-      REPLICATION_USER: ${PG_REPLICATION_USER:-replicator}
-      REPLICATION_PASSWORD: ${PG_REPLICATION_PASSWORD:-replicator123}
-    volumes:
-      - pg_standby1_data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${PG_ADMIN_USER} -d postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 60s
-    networks:
-      - internal
-    deploy:
-      replicas: 1
+        delay: 10s
+        max_attempts: 5
+        window: 120s
       placement:
         constraints:
           - node.hostname == server-c
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-
-  # PostgreSQL Standby 2 (server-d)
-  pg-standby2:
-    image: ${PG_IMAGE:-timescale/timescaledb:2.25.2-pg18}
-    hostname: pg-standby2
-    entrypoint: ["bash", "-c"]
-    command:
-      - |
-        # PGDATA is set by the image (e.g. /var/lib/postgresql/18/main)
-        # Ensure data directory exists with correct ownership
-        mkdir -p "$$PGDATA"
-        chown postgres:postgres /var/lib/postgresql
-        PARENT=$$(dirname "$$PGDATA")
-        [ -d "$$PARENT" ] && chown postgres:postgres "$$PARENT"
-        chown postgres:postgres "$$PGDATA"
-        chmod 0700 "$$PGDATA"
-
-        if [ ! -s "$$PGDATA/PG_VERSION" ]; then
-            echo "Data directory empty, performing base backup from primary..."
-
-            for i in $$(seq 1 36); do
-                if pg_isready -h pg-primary -p 5432 -U "$$REPLICATION_USER" 2>/dev/null; then
-                    echo "Primary is ready!"
-                    break
-                fi
-                echo "Attempt $$i/36: primary not ready, waiting 5s..."
-                sleep 5
-            done
-
-            export PGPASSWORD="$${REPLICATION_PASSWORD}"
-            gosu postgres pg_basebackup \
-                -h pg-primary -p 5432 -U "$${REPLICATION_USER}" \
-                -D "$$PGDATA" -Fp -Xs -P -R
-            unset PGPASSWORD
-
-            echo "Base backup complete"
-        fi
-
-        # Ensure standby mode
-        touch "$$PGDATA/standby.signal"
-        chown postgres:postgres "$$PGDATA/standby.signal"
-
-        exec gosu postgres postgres \
-            -c hot_standby=on \
-            -c shared_preload_libraries=timescaledb
-    environment:
-      PG_ADMIN_USER: ${PG_ADMIN_USER:-postgres}
-      REPLICATION_USER: ${PG_REPLICATION_USER:-replicator}
-      REPLICATION_PASSWORD: ${PG_REPLICATION_PASSWORD:-replicator123}
-    volumes:
-      - pg_standby2_data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${PG_ADMIN_USER} -d postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 60s
-    networks:
-      - internal
-    deploy:
-      replicas: 1
-      placement:
-        constraints:
-          - node.hostname == server-d
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-
-  # PostgreSQL Cluster Initializer (runs once, checks replication status)
-  pg-init:
-    image: ${PG_IMAGE:-timescale/timescaledb:2.25.2-pg18}
-    entrypoint: ["bash", "-c"]
-    command:
-      - |
-        echo "Waiting for PostgreSQL primary..."
-
-        for i in $$(seq 1 36); do
-            if pg_isready -h pg-primary -p 5432 -U "$$PG_ADMIN_USER" 2>/dev/null; then
-                echo "pg-primary is ready!"
-                break
-            fi
-            echo "Attempt $$i/36: pg-primary not ready, waiting 5s..."
-            sleep 5
-        done
-
-        # Wait for standbys
-        for h in pg-standby1 pg-standby2; do
-            for j in $$(seq 1 36); do
-                if pg_isready -h $$h -p 5432 -U "$$PG_ADMIN_USER" 2>/dev/null; then
-                    echo "$$h is ready!"
-                    break
-                fi
-                echo "Waiting for $$h... ($$j/36)"
-                sleep 5
-            done
-        done
-
-        echo ""
-        echo "Ensuring TimescaleDB extension is enabled on $$PG_DEFAULT_DB..."
-        PGPASSWORD="$$PG_ADMIN_PASSWORD" psql -v ON_ERROR_STOP=1 -h pg-primary -U "$$PG_ADMIN_USER" -d "$$PG_DEFAULT_DB" -c \
-            "CREATE EXTENSION IF NOT EXISTS timescaledb;"
-
-        echo ""
-        echo "Checking TimescaleDB status..."
-        PGPASSWORD="$$PG_ADMIN_PASSWORD" psql -v ON_ERROR_STOP=1 -h pg-primary -U "$$PG_ADMIN_USER" -d "$$PG_DEFAULT_DB" -c \
-            "SELECT extname, extversion FROM pg_extension WHERE extname = 'timescaledb';"
-
-        echo ""
-        echo "Checking replication status..."
-        PGPASSWORD="$$PG_ADMIN_PASSWORD" psql -v ON_ERROR_STOP=1 -h pg-primary -U "$$PG_ADMIN_USER" -d postgres -c \
-            "SELECT client_addr, state, sent_lsn, write_lsn, flush_lsn, replay_lsn FROM pg_stat_replication;"
-
-        echo ""
-        echo "PostgreSQL cluster is ready!"
-    environment:
-      PG_ADMIN_USER: ${PG_ADMIN_USER:-postgres}
-      PG_ADMIN_PASSWORD: ${PG_ADMIN_PASSWORD:-postgres123}
-      PG_DEFAULT_DB: ${PG_DEFAULT_DB:-postgres}
-    networks:
-      - internal
-    deploy:
-      replicas: 1
-      restart_policy:
-        condition: on-failure
-        max_attempts: 3
-      placement:
-        constraints:
-          - node.hostname == server-a
-
-  # Adminer (PostgreSQL Admin UI - lightweight)
-  adminer:
-    image: adminer:latest
-    environment:
-      ADMINER_DEFAULT_SERVER: pg-primary
-      ADMINER_DESIGN: pepa-linha-dark
-    networks:
-      - proxy
-      - internal
-    deploy:
-      replicas: 1
-      placement:
-        constraints:
-          - node.hostname == server-a
+      resources:
+        limits:
+          memory: ${MC_MEMORY_LIMIT:-6G}
+        reservations:
+          memory: ${MC_MEMORY:-4G}
       labels:
-        # Activer Traefik
         - "traefik.enable=true"
 
-        # Definir le port du service adminer
-        - "traefik.http.services.adminer.loadbalancer.server.port=8080"
+        # --- Routage TCP : Minecraft Java Edition (port 25565) ---
+        - "traefik.tcp.routers.minecraft-java.rule=HostSNI(`*`)"
+        - "traefik.tcp.routers.minecraft-java.entrypoints=minecraft-java"
+        - "traefik.tcp.routers.minecraft-java.service=minecraft-java"
+        - "traefik.tcp.services.minecraft-java.loadbalancer.server.port=25565"
 
-        # Middleware: Autoriser uniquement les IPs locales
-        - "traefik.http.middlewares.adminer-local-only.ipallowlist.sourcerange=127.0.0.1/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+        # --- Routage UDP : Minecraft Bedrock Edition (port 19132) ---
+        - "traefik.udp.routers.minecraft-bedrock.entrypoints=minecraft-bedrock"
+        - "traefik.udp.routers.minecraft-bedrock.service=minecraft-bedrock"
+        - "traefik.udp.services.minecraft-bedrock.loadbalancer.server.port=19132"
 
-        # Router HTTPS (principal) - Adminer
-        - "traefik.http.routers.adminer.rule=Host(`adminer.methodinfo.fr`)"
-        - "traefik.http.routers.adminer.entrypoints=websecure"
-        - "traefik.http.routers.adminer.tls.certresolver=letsencrypt"
-        - "traefik.http.routers.adminer.middlewares=adminer-local-only"
+        # --- Traefik HTTP : carte web BlueMap ---
+        # Service BlueMap
+        - "traefik.http.services.minecraft-map.loadbalancer.server.port=${BLUEMAP_PORT:-8100}"
 
-        # Router HTTP (redirige vers HTTPS)
-        - "traefik.http.routers.adminer-http.rule=Host(`adminer.methodinfo.fr`)"
-        - "traefik.http.routers.adminer-http.entrypoints=web"
-        - "traefik.http.routers.adminer-http.middlewares=redirect-to-https@file"
-        - "traefik.http.routers.adminer-http.service=noop@internal"
+        # Router HTTPS - Carte web
+        - "traefik.http.routers.minecraft-map.rule=Host(`${MAP_DOMAIN:-map.minecraft.vinsot.fr}`)"
+        - "traefik.http.routers.minecraft-map.entrypoints=websecure"
+        - "traefik.http.routers.minecraft-map.tls.certresolver=letsencrypt"
+        - "traefik.http.routers.minecraft-map.middlewares=global@file"
+        - "traefik.http.routers.minecraft-map.service=minecraft-map"
+
+        # Router HTTP - Redirection vers HTTPS
+        - "traefik.http.routers.minecraft-map-http.rule=Host(`${MAP_DOMAIN:-map.minecraft.vinsot.fr}`)"
+        - "traefik.http.routers.minecraft-map-http.entrypoints=web"
+        - "traefik.http.routers.minecraft-map-http.middlewares=redirect-to-https@file"
+        - "traefik.http.routers.minecraft-map-http.service=noop@internal"
+
+  # --- Interface web whitelist (accès local uniquement) ---
+  whitelist-web:
+    image: registry.methodinfo.fr/minecraft-whitelist-web:latest
+    build:
+      context: ..
+      dockerfile: whitelist-web/Dockerfile
+    environment:
+      RCON_HOST: minecraft
+      RCON_PORT: "25575"
+      RCON_PASSWORD: ${RCON_PASSWORD:?RCON_PASSWORD requis}
+      HTTP_PORT: "8080"
+
+    networks:
+      - proxy
+      - minecraft-net
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+    deploy:
+      replicas: 1
       restart_policy:
         condition: on-failure
+        delay: 10s
+      placement:
+        constraints:
+          - node.hostname == server-c
+      resources:
+        limits:
+          memory: 64M
+        reservations:
+          memory: 32M
+      labels:
+        - "traefik.enable=true"
 
-configs:
-  pg_init_replication:
-    external: true
+        # Service
+        - "traefik.http.services.minecraft-whitelist.loadbalancer.server.port=8080"
+
+        # Router HTTPS — accès réseau local uniquement (dashboard-allowlist)
+        - "traefik.http.routers.minecraft-whitelist.rule=Host(`${WHITELIST_DOMAIN:-whitelist.minecraft.vinsot.fr}`)"
+        - "traefik.http.routers.minecraft-whitelist.entrypoints=websecure"
+        - "traefik.http.routers.minecraft-whitelist.tls.certresolver=letsencrypt"
+        - "traefik.http.routers.minecraft-whitelist.middlewares=dashboard-allowlist@file"
+        - "traefik.http.routers.minecraft-whitelist.service=minecraft-whitelist"
+
+        # Router HTTP — redirection vers HTTPS
+        - "traefik.http.routers.minecraft-whitelist-http.rule=Host(`${WHITELIST_DOMAIN:-whitelist.minecraft.vinsot.fr}`)"
+        - "traefik.http.routers.minecraft-whitelist-http.entrypoints=web"
+        - "traefik.http.routers.minecraft-whitelist-http.middlewares=redirect-to-https@file"
+        - "traefik.http.routers.minecraft-whitelist-http.service=noop@internal"
+
+  # --- Sauvegarde automatique ---
+  backup:
+    image: itzg/mc-backup:latest
+    environment:
+      BACKUP_INTERVAL: ${BACKUP_INTERVAL:-24h}
+      RCON_HOST: minecraft
+      RCON_PORT: "25575"
+      RCON_PASSWORD: ${RCON_PASSWORD:?RCON_PASSWORD requis}
+      PAUSE_IF_NO_PLAYERS: "true"
+      PLAYERS_ONLINE_CHECK_INTERVAL: "5m"
+      PRUNE_BACKUPS_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+      BACKUP_METHOD: tar
+      DEST_DIR: /backups
+      SRC_DIR: /data/world
+      TZ: ${TZ:-Europe/Paris}
+
+    volumes:
+      - minecraft-data:/data:ro
+      - minecraft-backups:/backups
+
+    networks:
+      - proxy
+      - minecraft-net
+
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 30s
+      placement:
+        constraints:
+          - node.hostname == server-c
 
 volumes:
-  pg_primary_data:
-  pg_standby1_data:
-  pg_standby2_data:
+  minecraft-data:
+    driver: local
+  minecraft-backups:
+    driver: local
 
 networks:
-  internal:
-    driver: overlay
-    attachable: true
   proxy:
     external: true
+  minecraft-net:
+    driver: overlay
+    attachable: true
+
+configs:
+  bluemap_core_conf:
+    file: ./bluemap/core.conf
+  bluemap_webserver_conf:
+    file: ./bluemap/webserver.conf
