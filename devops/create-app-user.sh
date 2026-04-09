@@ -112,7 +112,7 @@ run_psql_verbose() {
 # Step 1: Create the database if it doesn't exist
 DB_EXISTS=$(run_psql "postgres" "SELECT 1 FROM pg_database WHERE datname = '${DATABASE}'")
 if [ "$DB_EXISTS" != "1" ]; then
-    RESULT=$(run_psql "postgres" "CREATE DATABASE ${DATABASE}")
+    RESULT=$(run_psql "postgres" "CREATE DATABASE ${DATABASE} TEMPLATE template0")
     if echo "$RESULT" | grep -qi "error"; then
         echo -e "${RED}Failed to create database: $RESULT${NC}"
         exit 1
