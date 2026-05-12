@@ -253,7 +253,15 @@ services:
     image: adminer:latest
     environment:
       ADMINER_DEFAULT_SERVER: pg-primary
+      ADMINER_DEFAULT_DRIVER: pgsql
       ADMINER_DESIGN: pepa-linha-dark
+    configs:
+      - source: adminer_index
+        target: /var/www/html/index.php
+        mode: 0644
+      - source: adminer_css
+        target: /var/www/html/adminer.css
+        mode: 0644
     networks:
       - proxy
       - internal
@@ -289,6 +297,10 @@ services:
 configs:
   pg_init_replication:
     external: true
+  adminer_index:
+    file: ./adminer/index.php
+  adminer_css:
+    file: ./adminer/adminer.css
 
 volumes:
   pg_primary_data:

@@ -1,0 +1,339 @@
+/* =====================================================================
+   Adminer — Modern theme overrides
+   Mounted at /var/www/html/adminer.css and auto-loaded by Adminer.
+   Designed to layer on top of the "pepa-linha-dark" design.
+   ===================================================================== */
+
+:root {
+    --bg:           #0f172a;   /* slate-900 */
+    --bg-elev:      #1e293b;   /* slate-800 */
+    --bg-elev-2:    #273449;
+    --border:       #334155;   /* slate-700 */
+    --text:         #e2e8f0;   /* slate-200 */
+    --text-muted:   #94a3b8;   /* slate-400 */
+    --accent:       #38bdf8;   /* sky-400 */
+    --accent-2:     #6366f1;   /* indigo-500 */
+    --accent-soft:  rgba(56, 189, 248, 0.12);
+    --success:      #34d399;
+    --warning:      #fbbf24;
+    --danger:       #f87171;
+    --radius:       10px;
+    --radius-sm:    6px;
+    --shadow-sm:    0 1px 2px rgba(0, 0, 0, 0.25);
+    --shadow:       0 8px 24px rgba(0, 0, 0, 0.35);
+    --font-sans:    "Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --font-mono:    "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+}
+
+/* ---------- Base ---------- */
+html, body {
+    background: radial-gradient(1200px 600px at 10% -10%, #1e2a4a 0%, transparent 60%),
+                radial-gradient(900px 500px at 110% 10%, #2a1e4a 0%, transparent 55%),
+                var(--bg) !important;
+    color: var(--text) !important;
+    font-family: var(--font-sans) !important;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+a, a:visited {
+    color: var(--accent);
+    text-decoration: none;
+    transition: color 0.15s ease;
+}
+a:hover {
+    color: #7dd3fc;
+    text-decoration: underline;
+}
+
+code, pre, tt, kbd, samp {
+    font-family: var(--font-mono) !important;
+    font-size: 0.92em;
+}
+
+/* ---------- Layout ---------- */
+#content {
+    margin: 24px 24px 24px 280px !important;
+    padding: 24px !important;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+#menu {
+    width: 240px !important;
+    margin: 24px 0 24px 24px !important;
+    padding: 20px 16px !important;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+#menu h1 {
+    font-size: 16px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.3px;
+    margin: 0 0 16px 0 !important;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text) !important;
+}
+#menu h1 a {
+    color: var(--accent) !important;
+}
+
+#menu p, #menu ul {
+    margin: 12px 0 !important;
+    padding: 0;
+    list-style: none;
+}
+#menu a {
+    display: inline-block;
+    padding: 4px 6px;
+    border-radius: var(--radius-sm);
+    transition: background 0.15s ease;
+}
+#menu a:hover {
+    background: var(--accent-soft);
+    text-decoration: none;
+}
+#menu .active, #menu a.active {
+    background: var(--accent-soft);
+    color: var(--accent) !important;
+    font-weight: 600;
+}
+
+/* ---------- Headings ---------- */
+h1, h2, h3 {
+    color: var(--text) !important;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+h2 {
+    margin-top: 0;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+/* ---------- Forms ---------- */
+input[type="text"],
+input[type="password"],
+input[type="email"],
+input[type="number"],
+input[type="search"],
+input[type="url"],
+select,
+textarea {
+    background: var(--bg) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-sm) !important;
+    padding: 8px 10px !important;
+    font-family: inherit !important;
+    font-size: 14px !important;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="email"]:focus,
+input[type="number"]:focus,
+input[type="search"]:focus,
+input[type="url"]:focus,
+select:focus,
+textarea:focus {
+    outline: none;
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+textarea {
+    font-family: var(--font-mono) !important;
+    line-height: 1.5;
+}
+
+label {
+    color: var(--text-muted);
+}
+
+/* ---------- Buttons ---------- */
+input[type="submit"],
+input[type="button"],
+button {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%) !important;
+    color: #0b1220 !important;
+    border: none !important;
+    border-radius: var(--radius-sm) !important;
+    padding: 8px 16px !important;
+    font-weight: 600 !important;
+    font-family: inherit !important;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    transition: transform 0.05s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+input[type="submit"]:hover,
+input[type="button"]:hover,
+button:hover {
+    filter: brightness(1.08);
+    box-shadow: 0 4px 12px rgba(56, 189, 248, 0.35);
+}
+input[type="submit"]:active,
+input[type="button"]:active,
+button:active {
+    transform: translateY(1px);
+}
+
+/* Secondary / dangerous buttons */
+input.button[value="Drop"],
+input[type="submit"][value*="Drop"],
+input[type="submit"][value*="Delete"] {
+    background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%) !important;
+    color: #fff !important;
+}
+
+/* ---------- Tables ---------- */
+table {
+    border-collapse: separate !important;
+    border-spacing: 0;
+    width: 100%;
+    background: transparent;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+table.checkable, table.odds, .scrollable table {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
+th, td {
+    border-color: var(--border) !important;
+    padding: 8px 12px !important;
+    color: var(--text);
+}
+
+th {
+    background: var(--bg-elev-2) !important;
+    color: var(--text) !important;
+    font-weight: 600;
+    text-align: left;
+    text-transform: none;
+    letter-spacing: 0.2px;
+}
+
+tr:nth-child(even) td {
+    background: rgba(255, 255, 255, 0.015);
+}
+
+tr:hover td {
+    background: var(--accent-soft) !important;
+}
+
+/* ---------- Messages ---------- */
+.message, .error {
+    padding: 10px 14px !important;
+    border-radius: var(--radius-sm) !important;
+    border: 1px solid var(--border);
+}
+.message {
+    background: rgba(52, 211, 153, 0.10) !important;
+    color: var(--success) !important;
+    border-color: rgba(52, 211, 153, 0.35);
+}
+.error {
+    background: rgba(248, 113, 113, 0.10) !important;
+    color: var(--danger) !important;
+    border-color: rgba(248, 113, 113, 0.35);
+}
+
+/* ---------- Login screen ---------- */
+body.login {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+}
+body.login #content {
+    margin: 0 !important;
+    width: 100%;
+    max-width: 420px;
+    padding: 32px !important;
+}
+body.login #content h1 {
+    text-align: center;
+    font-size: 22px;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+body.login form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+body.login table td {
+    background: transparent !important;
+    border: none !important;
+    padding: 6px 4px !important;
+}
+body.login input[type="submit"] {
+    width: 100%;
+    padding: 10px 16px !important;
+    font-size: 15px !important;
+    margin-top: 8px;
+}
+
+/* ---------- Scrollbar (WebKit) ---------- */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+::-webkit-scrollbar-track {
+    background: var(--bg);
+}
+::-webkit-scrollbar-thumb {
+    background: var(--bg-elev-2);
+    border-radius: 8px;
+    border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--accent);
+}
+
+/* ---------- Misc ---------- */
+fieldset {
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-sm);
+    padding: 12px 16px;
+    margin-bottom: 16px;
+}
+legend {
+    color: var(--text-muted);
+    padding: 0 6px;
+}
+
+#breadcrumb {
+    background: transparent !important;
+    padding: 0 0 12px 0 !important;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
+}
+#breadcrumb a {
+    color: var(--text-muted);
+}
+#breadcrumb a:hover {
+    color: var(--accent);
+}
+
+#logout {
+    display: inline-block;
+    margin-left: 8px;
+}
+
+/* Hide the Adminer footer credit on the main app (keep on login for licensing). */
+#content > p.links { opacity: 0.6; }
