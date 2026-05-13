@@ -297,9 +297,13 @@ services:
 configs:
   pg_init_replication:
     external: true
+  # Swarm configs are immutable: bump the vN suffix below whenever
+  # ./adminer/index.php or ./adminer/adminer.css changes, then redeploy.
   adminer_index:
+    name: adminer_index_v1
     file: ./adminer/index.php
   adminer_css:
+    name: adminer_css_v2
     file: ./adminer/adminer.css
 
 volumes:
