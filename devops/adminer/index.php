@@ -27,6 +27,15 @@ function adminer_object()
             $drivers = ["pgsql" => "PostgreSQL"];
             parent::loginForm();
         }
+
+        public function head($dark = null)
+        {
+            parent::head($dark);
+            // Layer custom overrides on top of the active design's adminer.css.
+            // Mounted separately to avoid clashing with the entrypoint's
+            // `ln -s designs/<ADMINER_DESIGN>/adminer.css adminer.css`.
+            echo '<link rel="stylesheet" type="text/css" href="adminer-custom.css">' . "\n";
+        }
     }
 
     return new AdminerPostgresOnly();

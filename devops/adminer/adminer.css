@@ -1,7 +1,8 @@
 /* =====================================================================
    Adminer — Modern theme overrides
-   Mounted at /var/www/html/adminer.css and auto-loaded by Adminer.
-   Designed to layer on top of the "pepa-linha-dark" design.
+   Mounted at /var/www/html/adminer-custom.css and injected via index.php
+   (Adminer head() hook). Layers on top of the "pepa-linha-dark" design,
+   whose own adminer.css is symlinked by the image entrypoint.
    ===================================================================== */
 
 :root {

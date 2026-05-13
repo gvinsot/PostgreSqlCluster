@@ -260,7 +260,7 @@ services:
         target: /var/www/html/index.php
         mode: 0644
       - source: adminer_css
-        target: /var/www/html/adminer.css
+        target: /var/www/html/adminer-custom.css
         mode: 0644
     networks:
       - proxy
