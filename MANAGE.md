@@ -15,7 +15,7 @@ This document covers the **deployment, architecture, and management** of the Pos
        │                                          ▲
        └──────────────────────────────────────────┘
               Streaming Replication (WAL)
-           Network: pgcluster_internal
+           Network: postgresqlcluster_internal
 ```
 
 | Component | Node | Description |
@@ -48,7 +48,7 @@ PG_REPLICATION_USER=replicator
 PG_REPLICATION_PASSWORD=ChangeThisReplicationPassword456!
 
 # Docker Swarm stack settings
-STACK_NAME=pgcluster
+STACK_NAME=postgresqlcluster
 
 # PostgreSQL image with TimescaleDB support
 PG_IMAGE=timescale/timescaledb:2.25.2-pg18
@@ -61,7 +61,7 @@ PG_IMAGE=timescale/timescaledb:2.25.2-pg18
 | `PG_DEFAULT_DB` | Default database | `postgres` |
 | `PG_REPLICATION_USER` | Replication user | `replicator` |
 | `PG_REPLICATION_PASSWORD` | Replication password | `replicator123` |
-| `STACK_NAME` | Docker stack name used by helper scripts | `pgcluster` |
+| `STACK_NAME` | Docker stack name used by helper scripts | `postgresqlcluster` |
 | `PG_IMAGE` | PostgreSQL image with TimescaleDB support | `timescale/timescaledb:2.25.2-pg18` |
 
 ## Deployment
@@ -72,10 +72,10 @@ The first deployment starts the cluster. The primary initializes with replicatio
 
 ```bash
 # Deploy the stack
-docker stack deploy -c devops/docker-compose.swarm.yml pgcluster
+docker stack deploy -c devops/docker-compose.swarm.yml postgresqlcluster
 
 # Watch the initialization
-docker service logs -f pgcluster_pg-init
+docker service logs -f postgresqlcluster_pg-init
 # Wait until you see "PostgreSQL cluster is ready!"
 # Then press Ctrl+C
 ```
@@ -86,7 +86,7 @@ The second deployment (or re-run) checks that replication is active.
 
 ```bash
 # Run deployment again (pre.sh will report status)
-docker stack deploy -c devops/docker-compose.swarm.yml pgcluster
+docker stack deploy -c devops/docker-compose.swarm.yml postgresqlcluster
 ```
 
 The `pre.sh` script will output the connection string with credentials.
@@ -95,18 +95,18 @@ The `pre.sh` script will output the connection string with credentials.
 
 ```bash
 # Check all services are running
-docker stack services pgcluster
+docker stack services postgresqlcluster
 
 # Expected output:
 # NAME                     REPLICAS   IMAGE
-# pgcluster_pg-primary     1/1        timescale/timescaledb:2.25.2-pg18
-# pgcluster_pg-standby1    1/1        timescale/timescaledb:2.25.2-pg18
-# pgcluster_pg-standby2    1/1        timescale/timescaledb:2.25.2-pg18
-# pgcluster_pg-init        1/1        timescale/timescaledb:2.25.2-pg18
-# pgcluster_adminer        1/1        adminer:latest
+# postgresqlcluster_pg-primary     1/1        timescale/timescaledb:2.25.2-pg18
+# postgresqlcluster_pg-standby1    1/1        timescale/timescaledb:2.25.2-pg18
+# postgresqlcluster_pg-standby2    1/1        timescale/timescaledb:2.25.2-pg18
+# postgresqlcluster_pg-init        1/1        timescale/timescaledb:2.25.2-pg18
+# postgresqlcluster_adminer        1/1        adminer:latest
 
 # Check replication status
-docker run --rm --network pgcluster_internal timescale/timescaledb:2.25.2-pg18 \
+docker run --rm --network postgresqlcluster_internal timescale/timescaledb:2.25.2-pg18 \
   psql -h pg-primary -U postgres -d postgres -c \
   "SELECT client_addr, state, sent_lsn, replay_lsn FROM pg_stat_replication;"
 ```
@@ -172,7 +172,7 @@ The script outputs the connection string for the created user.
 Alternatively, connect to PostgreSQL directly:
 
 ```bash
-docker run --rm -it --network pgcluster_internal timescale/timescaledb:2.25.2-pg18 \
+docker run --rm -it --network postgresqlcluster_internal timescale/timescaledb:2.25.2-pg18 \
   psql -h pg-primary -U postgres -d postgres
 ```
 
@@ -217,19 +217,19 @@ Data is stored in Docker volumes on each node:
 
 | Volume | Node | Container Path |
 |--------|------|----------------|
-| `pgcluster_pg_primary_data` | server-b | /var/lib/postgresql |
-| `pgcluster_pg_standby1_data` | server-c | /var/lib/postgresql |
-| `pgcluster_pg_standby2_data` | server-d | /var/lib/postgresql |
+| `postgresqlcluster_pg_primary_data` | server-b | /var/lib/postgresql |
+| `postgresqlcluster_pg_standby1_data` | server-c | /var/lib/postgresql |
+| `postgresqlcluster_pg_standby2_data` | server-d | /var/lib/postgresql |
 
 ### Backup
 
 ```bash
 # Backup from primary (all databases)
-docker run --rm --network pgcluster_internal timescale/timescaledb:2.25.2-pg18 \
+docker run --rm --network postgresqlcluster_internal timescale/timescaledb:2.25.2-pg18 \
   pg_dumpall -h pg-primary -U postgres | gzip > backup-$(date +%Y%m%d).sql.gz
 
 # Backup a specific database
-docker run --rm --network pgcluster_internal timescale/timescaledb:2.25.2-pg18 \
+docker run --rm --network postgresqlcluster_internal timescale/timescaledb:2.25.2-pg18 \
   pg_dump -h pg-primary -U postgres -Fc myapp > myapp-$(date +%Y%m%d).dump
 ```
 
@@ -238,11 +238,11 @@ docker run --rm --network pgcluster_internal timescale/timescaledb:2.25.2-pg18 \
 ```bash
 # Restore all databases
 gunzip -c backup-20240120.sql.gz | \
-  docker run --rm -i --network pgcluster_internal timescale/timescaledb:2.25.2-pg18 \
+  docker run --rm -i --network postgresqlcluster_internal timescale/timescaledb:2.25.2-pg18 \
   psql -h pg-primary -U postgres
 
 # Restore a specific database
-docker run --rm -i --network pgcluster_internal timescale/timescaledb:2.25.2-pg18 \
+docker run --rm -i --network postgresqlcluster_internal timescale/timescaledb:2.25.2-pg18 \
   pg_restore -h pg-primary -U postgres -d myapp < myapp-20240120.dump
 ```
 
@@ -252,7 +252,7 @@ docker run --rm -i --network pgcluster_internal timescale/timescaledb:2.25.2-pg1
 
 ```bash
 # Check detailed status
-docker service ps pgcluster_pg-primary --no-trunc
+docker service ps postgresqlcluster_pg-primary --no-trunc
 
 # Common issues:
 # - "no suitable node" -> Node constraint not met
@@ -271,15 +271,15 @@ docker pull timescale/timescaledb:2.25.2-pg18
 
 ```bash
 # Check standby logs
-docker service logs pgcluster_pg-standby1
+docker service logs postgresqlcluster_pg-standby1
 
 # Check replication status from primary
-docker run --rm --network pgcluster_internal timescale/timescaledb:2.25.2-pg18 \
+docker run --rm --network postgresqlcluster_internal timescale/timescaledb:2.25.2-pg18 \
   psql -h pg-primary -U postgres -d postgres -c \
   "SELECT client_addr, state, sent_lsn, write_lsn, flush_lsn, replay_lsn FROM pg_stat_replication;"
 
 # Check standby status
-docker run --rm --network pgcluster_internal timescale/timescaledb:2.25.2-pg18 \
+docker run --rm --network postgresqlcluster_internal timescale/timescaledb:2.25.2-pg18 \
   psql -h pg-standby1 -U postgres -d postgres -c \
   "SELECT pg_is_in_recovery(), pg_last_wal_receive_lsn(), pg_last_wal_replay_lsn();"
 ```
@@ -288,11 +288,11 @@ docker run --rm --network pgcluster_internal timescale/timescaledb:2.25.2-pg18 \
 
 ```bash
 # Test connection without password (should fail if auth is properly configured)
-docker run --rm --network pgcluster_internal timescale/timescaledb:2.25.2-pg18 \
+docker run --rm --network postgresqlcluster_internal timescale/timescaledb:2.25.2-pg18 \
   psql -h pg-primary -U postgres -d postgres -c "SELECT 1;"
 
 # Test with password
-docker run --rm --network pgcluster_internal -e PGPASSWORD=yourpassword timescale/timescaledb:2.25.2-pg18 \
+docker run --rm --network postgresqlcluster_internal -e PGPASSWORD=yourpassword timescale/timescaledb:2.25.2-pg18 \
   psql -h pg-primary -U postgres -d postgres -c "SELECT 1;"
 ```
 
@@ -300,25 +300,25 @@ docker run --rm --network pgcluster_internal -e PGPASSWORD=yourpassword timescal
 
 ```bash
 # Test connectivity from a container
-docker run --rm --network pgcluster_internal timescale/timescaledb:2.25.2-pg18 \
+docker run --rm --network postgresqlcluster_internal timescale/timescaledb:2.25.2-pg18 \
   pg_isready -h pg-primary -p 5432
 
 # Check overlay network
-docker network inspect pgcluster_internal
+docker network inspect postgresqlcluster_internal
 ```
 
 ### Check Cluster Health
 
 ```bash
 # Replication status
-docker run --rm --network pgcluster_internal -e PGPASSWORD=yourpassword timescale/timescaledb:2.25.2-pg18 \
+docker run --rm --network postgresqlcluster_internal -e PGPASSWORD=yourpassword timescale/timescaledb:2.25.2-pg18 \
   psql -h pg-primary -U postgres -d postgres -c \
   "SELECT client_addr, state, sent_lsn, replay_lsn,
    pg_wal_lsn_diff(sent_lsn, replay_lsn) AS replication_lag_bytes
    FROM pg_stat_replication;"
 
 # Check if a node is primary or standby
-docker run --rm --network pgcluster_internal -e PGPASSWORD=yourpassword timescale/timescaledb:2.25.2-pg18 \
+docker run --rm --network postgresqlcluster_internal -e PGPASSWORD=yourpassword timescale/timescaledb:2.25.2-pg18 \
   psql -h pg-primary -U postgres -d postgres -c "SELECT pg_is_in_recovery();"
 # Returns 'f' for primary, 't' for standby
 ```
@@ -328,13 +328,13 @@ docker run --rm --network pgcluster_internal -e PGPASSWORD=yourpassword timescal
 ### Remove the Stack
 
 ```bash
-docker stack rm pgcluster
+docker stack rm postgresqlcluster
 
 # Wait for removal
 sleep 15
 
 # Verify
-docker stack ps pgcluster
+docker stack ps postgresqlcluster
 ```
 
 ### Update PostgreSQL Version
@@ -348,7 +348,7 @@ docker stack ps pgcluster
 docker pull timescale/timescaledb:2.25.2-pg18
 
 # Redeploy
-docker stack deploy -c devops/docker-compose.swarm.yml pgcluster
+docker stack deploy -c devops/docker-compose.swarm.yml postgresqlcluster
 ```
 
 > **Warning:** Major version upgrades (e.g., 17 to 18) may require `pg_upgrade`. Test in a staging environment first.
@@ -356,7 +356,7 @@ docker stack deploy -c devops/docker-compose.swarm.yml pgcluster
 ### Force Restart a Service
 
 ```bash
-docker service update --force pgcluster_pg-primary
+docker service update --force postgresqlcluster_pg-primary
 ```
 
 ### Recreate a Standby
@@ -365,10 +365,10 @@ If a standby is corrupted or out of sync:
 
 ```bash
 # Remove the standby's data volume
-docker service scale pgcluster_pg-standby1=0
+docker service scale postgresqlcluster_pg-standby1=0
 sleep 10
-docker volume rm pgcluster_pg_standby1_data
-docker service scale pgcluster_pg-standby1=1
+docker volume rm postgresqlcluster_pg_standby1_data
+docker service scale postgresqlcluster_pg-standby1=1
 # The standby will automatically perform a fresh pg_basebackup
 ```
 
@@ -389,7 +389,7 @@ CREATE EXTENSION IF NOT EXISTS timescaledb;
 To verify the extension on the primary:
 
 ```bash
-docker run --rm --network pgcluster_internal -e PGPASSWORD=yourpassword timescale/timescaledb:2.25.2-pg18 \
+docker run --rm --network postgresqlcluster_internal -e PGPASSWORD=yourpassword timescale/timescaledb:2.25.2-pg18 \
   psql -h pg-primary -U postgres -d postgres -c \
   "SELECT extname, extversion FROM pg_extension WHERE extname = 'timescaledb';"
 ```

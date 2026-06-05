@@ -65,17 +65,17 @@ Use the format: `<project>_<environment>_<role>`
 
 ### 1. Add the Network
 
-Your service must join the `pgcluster_internal` overlay network:
+Your service must join the `postgresqlcluster_internal` overlay network:
 
 ```yaml
 services:
   your-service:
     image: your-image
     networks:
-      - pgcluster_internal
+      - postgresqlcluster_internal
 
 networks:
-  pgcluster_internal:
+  postgresqlcluster_internal:
     external: true
 ```
 
@@ -113,7 +113,7 @@ CREATE EXTENSION IF NOT EXISTS timescaledb;
 You can verify the extension with:
 
 ```bash
-docker run --rm --network pgcluster_internal timescale/timescaledb:2.25.2-pg18 \
+docker run --rm --network postgresqlcluster_internal timescale/timescaledb:2.25.2-pg18 \
   psql -h pg-primary -U postgres -d postgres -c \
   "SELECT extname, extversion FROM pg_extension WHERE extname = 'timescaledb';"
 ```
@@ -161,12 +161,12 @@ postgresql://user:pass@pg-standby1:5432,pg-standby2:5432/mydb?target_session_att
 Test from any container on the network:
 
 ```bash
-docker run --rm --network pgcluster_internal timescale/timescaledb:2.25.2-pg18 \
+docker run --rm --network postgresqlcluster_internal timescale/timescaledb:2.25.2-pg18 \
   pg_isready -h pg-primary -p 5432 -U postgres
 ```
 
 ```bash
-docker run --rm --network pgcluster_internal timescale/timescaledb:2.25.2-pg18 \
+docker run --rm --network postgresqlcluster_internal timescale/timescaledb:2.25.2-pg18 \
   psql -h pg-primary -U postgres -d postgres -c "SELECT version();"
 ```
 

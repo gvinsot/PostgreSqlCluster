@@ -31,7 +31,7 @@ fi
 PG_ADMIN_USER="${PG_ADMIN_USER:-postgres}"
 PG_ADMIN_PASSWORD="${PG_ADMIN_PASSWORD:-postgres123}"
 PG_IMAGE="${PG_IMAGE:-timescale/timescaledb:2.25.2-pg18}"
-STACK_NAME="${STACK_NAME:-pgcluster}"
+STACK_NAME="${STACK_NAME:-postgresqlcluster}"
 PG_NETWORK_NAME="${PG_NETWORK_NAME:-${STACK_NAME}_internal}"
 
 # Parse arguments

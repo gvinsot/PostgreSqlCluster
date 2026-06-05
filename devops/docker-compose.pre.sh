@@ -23,7 +23,7 @@ PG_DEFAULT_DB="${PG_DEFAULT_DB:-postgres}"
 PG_REPLICATION_USER="${PG_REPLICATION_USER:-replicator}"
 PG_REPLICATION_PASSWORD="${PG_REPLICATION_PASSWORD:-replicator123}"
 PG_IMAGE="${PG_IMAGE:-timescale/timescaledb:2.25.2-pg18}"
-STACK_NAME="${STACK_NAME:-pgcluster}"
+STACK_NAME="${STACK_NAME:-postgresqlcluster}"
 PG_NETWORK_NAME="${PG_NETWORK_NAME:-${STACK_NAME}_internal}"
 
 COMPOSE_FILE="$(dirname "$0")/docker-compose.swarm.yml"
