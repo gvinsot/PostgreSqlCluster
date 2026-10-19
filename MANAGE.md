@@ -92,7 +92,7 @@ The second deployment (or re-run) checks that replication is active.
 docker stack deploy -c devops/docker-compose.swarm.yml postgresqlcluster
 ```
 
-The `pre.sh` script will output the connection string with credentials.
+The `pre.sh` script will output the connection string (the password is masked: it comes from `PG_ADMIN_PASSWORD` in `devops/.env`).
 
 ### Verify Deployment
 
