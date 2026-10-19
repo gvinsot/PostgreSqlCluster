@@ -1,7 +1,13 @@
 version: "3.9"
 
 services:
-  # PostgreSQL Primary (server-b)
+  # Node placement is driven by PG_PRIMARY_NODE / PG_STANDBY1_NODE /
+  # PG_STANDBY2_NODE. Volumes are local to each node: moving the primary to
+  # another node is a switchover, performed by docker-compose.pre.sh (see
+  # MANAGE.md, "Switchover"). Never change these values with a manual
+  # "docker stack deploy": the primary would start on an empty volume.
+
+  # PostgreSQL Primary (server-d)
   pg-primary:
     image: ${PG_IMAGE:-timescale/timescaledb:2.25.2-pg18}
     hostname: pg-primary
@@ -9,6 +15,12 @@ services:
     entrypoint: ["bash", "-c"]
     command:
       - |
+        # Refuse to start on a volume retired by a switchover (pre.sh)
+        if [ -f "$$PGDATA/SWITCHOVER_FENCED" ]; then
+            cat "$$PGDATA/SWITCHOVER_FENCED"
+            exit 1
+        fi
+
         # Fix ownership on the volume mount so the postgres user can access PGDATA
         mkdir -p "$$PGDATA"
         chown postgres:postgres /var/lib/postgresql
@@ -42,13 +54,15 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    # Room for the shutdown checkpoint (default is 10s, then SIGKILL)
+    stop_grace_period: 2m
     networks:
       - internal
     deploy:
       replicas: 1
       placement:
         constraints:
-          - node.hostname == server-b
+          - node.hostname == ${PG_PRIMARY_NODE:-server-d}
       restart_policy:
         condition: on-failure
         delay: 5s
@@ -60,7 +74,18 @@ services:
     entrypoint: ["bash", "-c"]
     command:
       - |
-        # PGDATA is set by the image (e.g. /var/lib/postgresql/18/main)
+        # PGDATA is set by the image (e.g. /var/lib/postgresql/18/docker)
+        # Refuse to start on a volume retired by a switchover (pre.sh)
+        if [ -f "$$PGDATA/SWITCHOVER_FENCED" ]; then
+            cat "$$PGDATA/SWITCHOVER_FENCED"
+            exit 1
+        fi
+
+        # PulsarCD turns *_PASSWORD variables into Docker secrets
+        if [ -z "$${REPLICATION_PASSWORD:-}" ] && [ -f /run/secrets/REPLICATION_PASSWORD ]; then
+            REPLICATION_PASSWORD="$$(cat /run/secrets/REPLICATION_PASSWORD)"
+        fi
+
         # Ensure data directory exists with correct ownership
         mkdir -p "$$PGDATA"
         chown postgres:postgres /var/lib/postgresql
@@ -71,6 +96,8 @@ services:
 
         if [ ! -s "$$PGDATA/PG_VERSION" ]; then
             echo "Data directory empty, performing base backup from primary..."
+            # Leftovers of an interrupted base backup would make it fail
+            find "$$PGDATA" -mindepth 1 -delete
 
             for i in $$(seq 1 36); do
                 if pg_isready -h pg-primary -p 5432 -U "$$REPLICATION_USER" 2>/dev/null; then
@@ -108,26 +135,39 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 60s
+      # Covers the initial pg_basebackup of a new standby
+      start_period: 10m
+    stop_grace_period: 2m
     networks:
       - internal
     deploy:
       replicas: 1
       placement:
         constraints:
-          - node.hostname == server-c
+          - node.hostname == ${PG_STANDBY1_NODE:-server-c}
       restart_policy:
         condition: on-failure
         delay: 5s
 
-  # PostgreSQL Standby 2 (server-d)
+  # PostgreSQL Standby 2 (server-b)
   pg-standby2:
     image: ${PG_IMAGE:-timescale/timescaledb:2.25.2-pg18}
     hostname: pg-standby2
     entrypoint: ["bash", "-c"]
     command:
       - |
-        # PGDATA is set by the image (e.g. /var/lib/postgresql/18/main)
+        # PGDATA is set by the image (e.g. /var/lib/postgresql/18/docker)
+        # Refuse to start on a volume retired by a switchover (pre.sh)
+        if [ -f "$$PGDATA/SWITCHOVER_FENCED" ]; then
+            cat "$$PGDATA/SWITCHOVER_FENCED"
+            exit 1
+        fi
+
+        # PulsarCD turns *_PASSWORD variables into Docker secrets
+        if [ -z "$${REPLICATION_PASSWORD:-}" ] && [ -f /run/secrets/REPLICATION_PASSWORD ]; then
+            REPLICATION_PASSWORD="$$(cat /run/secrets/REPLICATION_PASSWORD)"
+        fi
+
         # Ensure data directory exists with correct ownership
         mkdir -p "$$PGDATA"
         chown postgres:postgres /var/lib/postgresql
@@ -138,6 +178,8 @@ services:
 
         if [ ! -s "$$PGDATA/PG_VERSION" ]; then
             echo "Data directory empty, performing base backup from primary..."
+            # Leftovers of an interrupted base backup would make it fail
+            find "$$PGDATA" -mindepth 1 -delete
 
             for i in $$(seq 1 36); do
                 if pg_isready -h pg-primary -p 5432 -U "$$REPLICATION_USER" 2>/dev/null; then
@@ -175,14 +217,16 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 60s
+      # Covers the initial pg_basebackup of a new standby
+      start_period: 10m
+    stop_grace_period: 2m
     networks:
       - internal
     deploy:
       replicas: 1
       placement:
         constraints:
-          - node.hostname == server-d
+          - node.hostname == ${PG_STANDBY2_NODE:-server-b}
       restart_policy:
         condition: on-failure
         delay: 5s
@@ -193,6 +237,11 @@ services:
     entrypoint: ["bash", "-c"]
     command:
       - |
+        # PulsarCD turns *_PASSWORD variables into Docker secrets
+        if [ -z "$${PG_ADMIN_PASSWORD:-}" ] && [ -f /run/secrets/PG_ADMIN_PASSWORD ]; then
+            PG_ADMIN_PASSWORD="$$(cat /run/secrets/PG_ADMIN_PASSWORD)"
+        fi
+
         echo "Waiting for PostgreSQL primary..."
 
         for i in $$(seq 1 36); do

@@ -8,7 +8,7 @@ This document covers the **deployment, architecture, and management** of the Pos
 
 ```
 ┌─────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   server-b  │    │    server-c     │    │    server-d     │
+│   server-d  │    │    server-c     │    │    server-b     │
 │   PRIMARY   │───►│    STANDBY 1    │    │    STANDBY 2    │
 │ TimescaleDB │───►│   TimescaleDB   │    │   TimescaleDB   │
 └─────────────┘    └─────────────────┘    └─────────────────┘
@@ -20,9 +20,9 @@ This document covers the **deployment, architecture, and management** of the Pos
 
 | Component | Node | Description |
 |-----------|------|-------------|
-| pg-primary | server-b | Primary node (read/write) |
-| pg-standby1 | server-c | Hot standby replica (read-only) |
-| pg-standby2 | server-d | Hot standby replica (read-only) |
+| pg-primary | server-d (`PG_PRIMARY_NODE`) | Primary node (read/write) |
+| pg-standby1 | server-c (`PG_STANDBY1_NODE`) | Hot standby replica (read-only) |
+| pg-standby2 | server-b (`PG_STANDBY2_NODE`) | Hot standby replica (read-only) |
 | pg-init | server-a | Initialization container (runs once) |
 | adminer | any manager | Web admin UI (Adminer) |
 
@@ -62,6 +62,9 @@ PG_IMAGE=timescale/timescaledb:2.25.2-pg18
 | `PG_REPLICATION_USER` | Replication user | `replicator` |
 | `PG_REPLICATION_PASSWORD` | Replication password | `replicator123` |
 | `STACK_NAME` | Docker stack name used by helper scripts | `postgresqlcluster` |
+| `PG_PRIMARY_NODE` | Node of `pg-primary` (see [Switchover](#switchover)) | `server-d` |
+| `PG_STANDBY1_NODE` | Node of `pg-standby1` | `server-c` |
+| `PG_STANDBY2_NODE` | Node of `pg-standby2` | `server-b` |
 | `PG_IMAGE` | PostgreSQL image with TimescaleDB support | `timescale/timescaledb:2.25.2-pg18` |
 
 ## Deployment
@@ -217,9 +220,11 @@ Data is stored in Docker volumes on each node:
 
 | Volume | Node | Container Path |
 |--------|------|----------------|
-| `postgresqlcluster_pg_primary_data` | server-b | /var/lib/postgresql |
+| `postgresqlcluster_pg_primary_data` | server-d | /var/lib/postgresql |
 | `postgresqlcluster_pg_standby1_data` | server-c | /var/lib/postgresql |
-| `postgresqlcluster_pg_standby2_data` | server-d | /var/lib/postgresql |
+| `postgresqlcluster_pg_standby2_data` | server-b | /var/lib/postgresql |
+
+Volumes are local to their node: a volume of the same name on another node is a different (stale or empty) volume.
 
 ### Backup
 
@@ -357,6 +362,31 @@ docker stack deploy -c devops/docker-compose.swarm.yml postgresqlcluster
 
 ```bash
 docker service update --force postgresqlcluster_pg-primary
+```
+
+### Switchover
+
+The primary role moves to another node through a regular deployment: set `PG_PRIMARY_NODE` to the node of one of the standbys (and give the old primary node to that standby), then deploy with PulsarCD. **Never do it with a manual `docker stack deploy`**: the primary would start on the empty volume of its new node.
+
+`docker-compose.pre.sh` detects that `PG_PRIMARY_NODE` differs from the deployed placement and, before the stack is deployed:
+
+1. checks that the primary is up and that the standby on the target node is streaming;
+2. runs `CHECKPOINT`, then stops `pg-primary` (clean shutdown: the shutdown checkpoint is streamed to the standbys) and reads its `pg_control` to get the checkpoint location;
+3. waits for the standby to replay past that checkpoint (`PG_SWITCHOVER_CATCHUP_TIMEOUT`, 120 s);
+4. promotes it (`pg_promote()`), then stops it;
+5. copies its data into `pg_primary_data` on the target node, removing `standby.signal` and `primary_conninfo`;
+6. fences the retired volumes (old primary, promoted standby): `PG_VERSION` is renamed `PG_VERSION.fenced` and a `SWITCHOVER_FENCED` file explains why, so neither the current compose nor a rollback to a previous version can start PostgreSQL on stale data;
+7. empties the volume of the standby moving to the old primary node, which then performs a fresh `pg_basebackup`.
+
+Node-local work runs as one-shot swarm jobs (`pgswitch-*`, `--mode replicated-job`) pinned to the node. Until step 4, any failure restarts the old primary and aborts the deployment; after it, the script stops with the location of the current data. `docker-compose.post.sh` then waits (`PG_POST_CHECK_TIMEOUT`, 600 s) for the primary to accept writes on its node and for both standbys to stream from it. The other standby follows the new timeline on its own.
+
+Applications are disconnected from the stop of the old primary until the new one starts (a few minutes, mostly the copy of the data). Once the cluster is validated, remove the retired volumes printed by `pre.sh`:
+
+```bash
+# on the old primary node
+docker volume rm postgresqlcluster_pg_primary_data
+# on the new primary node (the standby volume that was promoted)
+docker volume rm postgresqlcluster_pg_standby2_data
 ```
 
 ### Recreate a Standby
